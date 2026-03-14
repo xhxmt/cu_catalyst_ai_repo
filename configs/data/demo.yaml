@@ -1,0 +1,6 @@
+source_name: demo
+n_samples: 240
+demo_output: data/raw/demo/cu_demo_raw.parquet
+cleaned_output: data/interim/cu_cleaned.parquet
+processed_output: data/processed/model_table.parquet
+train_predictions_output: reports/tables/train_predictions.csv

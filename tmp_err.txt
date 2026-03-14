@@ -1,0 +1,16 @@
+
+=================================== ERRORS ====================================
+_________________ ERROR collecting tests/test_config_smoke.py _________________
+ImportError while importing test module 'D:\dachuang\code\tests\test_config_smoke.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+C:\Users\Lenovo\scoop\apps\python\current\Lib\importlib\__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_config_smoke.py:6: in <module>
+    from omegaconf import OmegaConf
+E   ModuleNotFoundError: No module named 'omegaconf'
+=========================== short test summary info ===========================
+ERROR tests/test_config_smoke.py
+!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+1 error in 0.25s

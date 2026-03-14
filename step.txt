@@ -1,0 +1,84 @@
+• 1. Baseline 配置与流程边界收敛
+
+  目标：把第一版 baseline 明确收敛到 demo -> clean -> featurize -> train(rf/linear) -> explain -> report，固定 target、
+  split、输出路径和默认模型，避免一开始引入不必要分支。
+
+  涉及文件：configs/config.yaml 、configs/data/demo.yaml 、configs/features/baseline.yaml 、configs/cv/kfold5.yaml 、
+  configs/model/rf.yaml 、src/cu_catalyst_ai/cli.py
+
+  输入输出：输入是 Hydra 配置和 demo 数据源；输出是一个可直接执行的最小 baseline 配置组合。
+
+  完成标准：默认命令不需要额外参数就能跑 baseline；模型、target、路径和 CV 协议在配置里清晰可见；不涉及 DFT。
+
+  需要的测试：配置 smoke test；CLI 默认配置可解析测试。
+
+  2. 数据清洗与 split 契约固化
+
+  目标：确保 clean 阶段稳定地产出可训练表，至少保证必需列、单位检查、去重、train/test split 全部成立。
+
+  涉及文件：src/cu_catalyst_ai/clean/validate_conditions.py 、src/cu_catalyst_ai/clean/normalize_units.py 、src/
+  cu_catalyst_ai/clean/deduplicate.py 、src/cu_catalyst_ai/clean/split_registry.py 、src/cu_catalyst_ai/cli.py
+
+  输入输出：输入是 raw demo parquet；输出是带 split 的 cleaned parquet。
+
+  完成标准：clean 后数据包含 baseline 所需列；split 只含 train/test；train/test 都非空；异常输入能尽早报错。
+
+  需要的测试：缺列报错测试；非 eV 单位报错测试；split 生成测试；去重行为测试。
+
+  3. 特征表最小闭环
+
+  目标：生成一个直接可供模型训练的 processed table，包含稳定的数值特征、one-hot 类别特征、target 和 split。
+
+  涉及文件：src/cu_catalyst_ai/features/basic_features.py 、src/cu_catalyst_ai/features/structural_features.py 、src/
+  cu_catalyst_ai/features/feature_selection.py 、configs/features/baseline.yaml 、src/cu_catalyst_ai/cli.py
+
+  输入输出：输入是 cleaned parquet；输出是 processed model table parquet。
+
+  完成标准：processed table 包含 catalyst_id、adsorption_energy、split 和所有 baseline 特征；coordination_to_distance 正
+  常生成；类别列 one-hot 后稳定可训练。
+
+  需要的测试：特征列存在测试；one-hot 列存在测试；派生特征数值测试；feature selection 只返回训练特征列测试。
+
+  4. 训练与评估产物闭环
+
+  目标：让 train 阶段稳定产出 baseline 模型、CV 指标、测试集预测，并满足 AGENTS 中的核心指标要求。
+
+  涉及文件：src/cu_catalyst_ai/models/train.py 、src/cu_catalyst_ai/models/registry.py 、src/cu_catalyst_ai/models/
+  cv.py 、src/cu_catalyst_ai/models/metrics.py 、src/cu_catalyst_ai/cli.py
+
+  输入输出：输入是 processed model table；输出是 metrics.csv、predictions.csv、model.joblib。
+
+  完成标准：至少支持 rf 和 linear 两个 baseline；每次训练都保存 MAE、RMSE、R2；预测文件与 test split 对齐；模型可被后续
+  explain 阶段加载。
+
+  需要的测试：训练产物落盘测试；metrics 字段完整性测试；预测行数与 test split 一致测试；未知模型报错测试。
+
+  5. 解释、作图与报告最小交付
+
+  目标：在训练成功后，补齐 explain、parity plot、learning curve、importance plot 和 summary report，形成最小研究交付物。
+
+  涉及文件：src/cu_catalyst_ai/explain/shap_runner.py 、src/cu_catalyst_ai/viz/parity_plot.py 、src/cu_catalyst_ai/viz/
+  learning_curve.py 、src/cu_catalyst_ai/viz/shap_plot.py 、src/cu_catalyst_ai/viz/report_bundle.py 、src/
+  cu_catalyst_ai/cli.py
+
+  输入输出：输入是 trained model bundle、processed table、metrics；输出是 feature importance 表、两张图、importance 图和
+  markdown summary。
+
+  完成标准：reports/tables/ 下有解释结果；reports/figures/ 下有 parity 和 learning curve；summary report 能汇总 model 和
+  metrics，不依赖 DFT。
+
+  需要的测试：explain 输出文件测试；图像文件存在测试；report 生成测试；无 SHAP 时 permutation importance 回退测试。
+
+  6. 端到端 smoke test 与复现保障
+
+  目标：用 demo 数据把整条 baseline 流水线做成可重复验证的最小闭环，确保仓库当前状态能真正“一键跑通”。
+
+  涉及文件：tests/test_models.py 、tests/test_features.py 、tests/test_schemas.py 、新增的 CLI/integration 测试文件、必
+  要时补充 README.md
+
+  输入输出：输入是 demo 配置；输出是 smoke test、最小运行命令和可验证的产物路径。
+
+  完成标准：测试能覆盖 fetch -> clean -> featurize -> train -> explain -> report 主链；README 命令与代码一致；baseline
+  失败时能快速定位在某一阶段。
+
+  需要的测试：CLI 端到端 smoke test；关键产物路径断言；默认配置回归测试；最小读写集成测试。

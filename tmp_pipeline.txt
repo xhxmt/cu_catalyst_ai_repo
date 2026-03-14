@@ -1,0 +1,2 @@
+[2026-03-14 21:54:22,947][__main__][INFO] - Running task=fetch with model=rf
+[2026-03-14 21:54:22,990][cu_catalyst_ai.dataio.mp_fetch][INFO] - Saved demo dataset to data/raw/demo/cu_demo_raw.parquet

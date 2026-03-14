@@ -1,0 +1,53 @@
+defaults:
+  - data: demo
+  - features: baseline
+  - model: rf
+  - cv: kfold5
+  - _self_
+
+project:
+  seed: 42
+  target_col: adsorption_energy
+  id_col: catalyst_id
+
+task: fetch
+
+paths:
+  raw_dir: data/raw
+  interim_dir: data/interim
+  processed_dir: data/processed
+  reports_dir: reports
+  figures_dir: reports/figures
+  tables_dir: reports/tables
+  models_dir: reports/models
+  dft_dir: data/external/dft
+
+data:
+  n_samples: 240
+  source_name: demo
+  demo_output: data/raw/demo/cu_demo_raw.parquet
+  cleaned_output: data/interim/cu_cleaned.parquet
+  processed_output: data/processed/model_table.parquet
+  train_predictions_output: reports/tables/train_predictions.csv
+  mp_collection: materials/summary
+
+features:
+  use_columns:
+    - coordination_number
+    - avg_neighbor_distance
+    - electronegativity
+    - d_band_center
+    - surface_energy
+    - facet
+  categorical_columns:
+    - facet
+
+model:
+  name: rf
+  random_state: 42
+  params: {}
+
+cv:
+  n_splits: 5
+  shuffle: true
+  random_state: 42

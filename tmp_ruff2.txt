@@ -1,0 +1,106 @@
+E501 Line too long (101 > 100)
+  --> src\cu_catalyst_ai\clean\split_registry.py:8:101
+   |
+ 7 | def assign_splits(df: pd.DataFrame, seed: int = 42, test_size: float = 0.2) -> pd.DataFrame:
+ 8 |     train_ids, test_ids = train_test_split(df["catalyst_id"], test_size=test_size, random_state=seed)
+   |                                                                                                     ^
+ 9 |     out = df.copy()
+10 |     out["split"] = "train"
+   |
+
+E501 Line too long (126 > 100)
+   --> src\cu_catalyst_ai\cli.py:114:101
+    |
+112 |         )
+113 |         save_parity_plot(result["pred_df"], str(cfg.project.target_col), _parity_path(cfg))
+114 |         save_learning_curve(result["model"], df, str(cfg.project.target_col), _learning_curve_path(cfg), int(cfg.cv.n_splits))
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+115 |         logger.info("Training artifacts saved")
+116 |         return
+    |
+
+E501 Line too long (105 > 100)
+  --> src\cu_catalyst_ai\dataio\mp_fetch.py:53:101
+   |
+53 | def fetch_data(source_name: str, output_path: str, n_samples: int = 240, seed: int = 42) -> pd.DataFrame:
+   |                                                                                                     ^^^^^
+54 |     if source_name == "demo":
+55 |         df = generate_demo_dataset(n_samples=n_samples, seed=seed)
+   |
+
+E501 Line too long (118 > 100)
+  --> src\cu_catalyst_ai\explain\shap_runner.py:11:101
+   |
+11 | def explain_model(model, df: pd.DataFrame, target_col: str, output_path: str, random_state: int = 42) -> pd.DataFrame:
+   |                                                                                                     ^^^^^^^^^^^^^^^^^^
+12 |     feature_cols = get_feature_columns(df)
+13 |     test_df = df[df["split"] == "test"].copy()
+   |
+
+E501 Line too long (103 > 100)
+  --> src\cu_catalyst_ai\explain\shap_runner.py:24:101
+   |
+22 |         importance = np.abs(shap_values.values).mean(axis=0)
+23 |     except Exception:
+24 |         result = permutation_importance(model, X_test, y_test, n_repeats=10, random_state=random_state)
+   |                                                                                                     ^^^
+25 |         importance = result.importances_mean
+   |
+
+E501 Line too long (101 > 100)
+  --> src\cu_catalyst_ai\explain\shap_runner.py:28:101
+   |
+27 |     explanation_df = pd.DataFrame({"feature": feature_cols, "importance": importance})
+28 |     explanation_df = explanation_df.sort_values("importance", ascending=False).reset_index(drop=True)
+   |                                                                                                     ^
+29 |     explanation_df.to_csv(ensure_parent(output_path), index=False)
+30 |     return explanation_df
+   |
+
+E501 Line too long (114 > 100)
+ --> src\cu_catalyst_ai\features\basic_features.py:6:101
+  |
+6 | def build_feature_table(df: pd.DataFrame, use_columns: list[str], categorical_columns: list[str]) -> pd.DataFrame:
+  |                                                                                                     ^^^^^^^^^^^^^^
+7 |     out = df[["catalyst_id", "adsorption_energy", "split", *use_columns]].copy()
+8 |     out = pd.get_dummies(out, columns=categorical_columns, drop_first=False)
+  |
+
+E501 Line too long (105 > 100)
+ --> src\cu_catalyst_ai\models\cv.py:7:101
+  |
+7 | def run_cv(model, X, y, n_splits: int = 5, shuffle: bool = True, random_state: int = 42) -> pd.DataFrame:
+  |                                                                                                     ^^^^^
+8 |     cv = KFold(n_splits=n_splits, shuffle=shuffle, random_state=random_state)
+9 |     scores = cross_validate(
+  |
+
+E501 Line too long (114 > 100)
+  --> src\cu_catalyst_ai\models\train.py:36:101
+   |
+35 |     model = build_model(model_name=model_name, random_state=random_state, params=params)
+36 |     cv_summary = run_cv(model, X_train, y_train, n_splits=n_splits, shuffle=shuffle, random_state=cv_random_state)
+   |                                                                                                     ^^^^^^^^^^^^^^
+37 |
+38 |     model.fit(X_train, y_train)
+   |
+
+E501 Line too long (111 > 100)
+  --> src\cu_catalyst_ai\viz\learning_curve.py:12:101
+   |
+12 | def save_learning_curve(model, df: pd.DataFrame, target_col: str, output_path: str, n_splits: int = 5) -> None:
+   |                                                                                                     ^^^^^^^^^^^
+13 |     train_df = df[df["split"] == "train"].copy()
+14 |     X = train_df[get_feature_columns(train_df)]
+   |
+
+E501 Line too long (109 > 100)
+  --> src\cu_catalyst_ai\viz\report_bundle.py:8:101
+   |
+ 8 | def write_report_bundle(model_name: str, metrics_path: str, explanation_path: str, output_path: str) -> None:
+   |                                                                                                     ^^^^^^^^^
+ 9 |     metrics = pd.read_csv(metrics_path)
+10 |     explanation = pd.read_csv(explanation_path)
+   |
+
+Found 11 errors.

@@ -1,0 +1,23 @@
+__pycache__/
+*.pyc
+.venv/
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+.DS_Store
+
+# Hydra outputs
+outputs/
+multirun/
+
+# Local data and artifacts
+runs/
+reports/logs/
+*.joblib
+*.parquet
+*.csv
+!data/**/.gitkeep
+!reports/**/.gitkeep
+!runs/**/.gitkeep
+
+.env

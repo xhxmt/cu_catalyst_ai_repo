@@ -1,0 +1,2 @@
+[2026-03-14 21:54:45,105][__main__][INFO] - Running task=featurize with model=rf
+[2026-03-14 21:54:45,148][__main__][INFO] - Saved features to data/processed/model_table.parquet

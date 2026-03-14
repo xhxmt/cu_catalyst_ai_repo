@@ -1,0 +1,9 @@
+use_columns:
+  - coordination_number
+  - avg_neighbor_distance
+  - electronegativity
+  - d_band_center
+  - surface_energy
+  - facet
+categorical_columns:
+  - facet

@@ -1,0 +1,3 @@
+[2026-03-14 21:55:19,196][__main__][INFO] - Running task=explain with model=rf
+Found a NULL input array in _cext_dense_tree_update_weights!
+[2026-03-14 21:55:22,288][__main__][INFO] - Explanation artifacts saved
