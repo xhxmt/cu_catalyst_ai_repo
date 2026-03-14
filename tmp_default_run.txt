@@ -1,0 +1,15 @@
+[2026-03-14 22:37:44,540][__main__][INFO] - Running task=baseline with model=rf
+[2026-03-14 22:37:44,541][__main__][INFO] - === Stage 1/6: fetch ===
+[2026-03-14 22:37:44,560][cu_catalyst_ai.dataio.mp_fetch][INFO] - Saved demo dataset to data/raw/demo/cu_demo_raw.parquet
+[2026-03-14 22:37:44,560][__main__][INFO] - === Stage 2/6: clean ===
+[2026-03-14 22:37:44,588][__main__][INFO] - Saved cleaned data to data/interim/cu_cleaned.parquet
+[2026-03-14 22:37:44,588][__main__][INFO] - === Stage 3/6: featurize ===
+[2026-03-14 22:37:44,598][__main__][INFO] - Saved features to data/processed/model_table.parquet
+[2026-03-14 22:37:44,599][__main__][INFO] - === Stage 4/6: train ===
+[2026-03-14 22:38:01,166][__main__][INFO] - Training artifacts saved
+[2026-03-14 22:38:01,169][__main__][INFO] - === Stage 5/6: explain ===
+Found a NULL input array in _cext_dense_tree_update_weights!
+[2026-03-14 22:38:07,124][__main__][INFO] - Explanation artifacts saved
+[2026-03-14 22:38:07,124][__main__][INFO] - === Stage 6/6: report ===
+[2026-03-14 22:38:07,211][__main__][INFO] - Summary report saved
+[2026-03-14 22:38:07,211][__main__][INFO] - Baseline pipeline complete.

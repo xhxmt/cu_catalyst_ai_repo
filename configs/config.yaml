@@ -10,7 +10,9 @@ project:
   target_col: adsorption_energy
   id_col: catalyst_id
 
-task: fetch
+# Default task runs the full baseline pipeline end-to-end.
+# Individual stages can still be run by passing task=<stage> on the CLI.
+task: baseline
 
 paths:
   raw_dir: data/raw
@@ -21,6 +23,15 @@ paths:
   tables_dir: reports/tables
   models_dir: reports/models
   dft_dir: data/external/dft
+  # --- Final output files (all model-prefixed, Hydra-interpolated) ---
+  metrics_output: ${paths.tables_dir}/${model.name}_metrics.csv
+  predictions_output: ${paths.tables_dir}/${model.name}_predictions.csv
+  model_output: ${paths.models_dir}/${model.name}.joblib
+  explanation_output: ${paths.tables_dir}/${model.name}_feature_importance.csv
+  parity_output: ${paths.figures_dir}/${model.name}_parity.png
+  learning_curve_output: ${paths.figures_dir}/${model.name}_learning_curve.png
+  importance_plot_output: ${paths.figures_dir}/${model.name}_importance.png
+  report_output: ${paths.reports_dir}/${model.name}_summary.md
 
 data:
   n_samples: 240
@@ -28,7 +39,6 @@ data:
   demo_output: data/raw/demo/cu_demo_raw.parquet
   cleaned_output: data/interim/cu_cleaned.parquet
   processed_output: data/processed/model_table.parquet
-  train_predictions_output: reports/tables/train_predictions.csv
   mp_collection: materials/summary
 
 features:
@@ -51,3 +61,4 @@ cv:
   n_splits: 5
   shuffle: true
   random_state: 42
+

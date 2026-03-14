@@ -6,31 +6,53 @@ from pathlib import Path
 
 CONFIG_DIR = Path(__file__).parent.parent / "configs"
 
+# All output-file path keys that must be present in the composed config.
+_OUTPUT_PATH_KEYS = (
+    "metrics_output",
+    "predictions_output",
+    "model_output",
+    "explanation_output",
+    "parity_output",
+    "learning_curve_output",
+    "importance_plot_output",
+    "report_output",
+)
 
-def test_config_yaml_parses_and_has_expected_keys() -> None:
-    """Ensure config.yaml can be loaded and key fields have correct defaults."""
+
+def test_config_yaml_default_task_is_baseline() -> None:
+    """Default task must be 'baseline' so bare CLI runs the full pipeline."""
     from omegaconf import OmegaConf  # noqa: PLC0415
 
-    cfg_path = CONFIG_DIR / "config.yaml"
-    # OmegaConf can load a single YAML without Hydra runtime.
-    # The top-level config.yaml uses Hydra 'defaults:' which OmegaConf
-    # won't resolve (that requires the Hydra compose API), so we check
-    # only the keys that are explicitly present in config.yaml itself.
-    cfg = OmegaConf.load(cfg_path)
+    cfg = OmegaConf.load(CONFIG_DIR / "config.yaml")
+    assert str(cfg.task) == "baseline", (
+        f"Default task must be 'baseline', got '{cfg.task}'. "
+        "Update configs/config.yaml line 'task: ...' to 'task: baseline'."
+    )
 
-    # Project keys
+
+def test_config_yaml_output_paths_fully_declared() -> None:
+    """All final output-file paths must be declared under paths: in config.yaml."""
+    from omegaconf import OmegaConf  # noqa: PLC0415
+
+    cfg = OmegaConf.load(CONFIG_DIR / "config.yaml")
+    for key in _OUTPUT_PATH_KEYS:
+        assert key in cfg.paths, f"Missing paths.{key} in config.yaml"
+
+
+def test_config_yaml_parses_and_has_expected_keys() -> None:
+    """Ensure config.yaml project/model/cv keys have correct defaults."""
+    from omegaconf import OmegaConf  # noqa: PLC0415
+
+    cfg = OmegaConf.load(CONFIG_DIR / "config.yaml")
+
     assert cfg.project.target_col == "adsorption_energy"
     assert cfg.project.id_col == "catalyst_id"
     assert cfg.project.seed == 42
-
-    # Top-level model override present in config.yaml
     assert cfg.model.name == "rf"
-
-    # CV override present in config.yaml
     assert cfg.cv.n_splits == 5
     assert cfg.cv.shuffle is True
 
-    # Output paths present
+    # Directory-level paths present
     for key in ("raw_dir", "interim_dir", "processed_dir", "tables_dir", "figures_dir"):
         assert key in cfg.paths, f"Missing path key: {key}"
 
