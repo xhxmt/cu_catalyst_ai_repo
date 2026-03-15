@@ -1,3 +1,21 @@
+"""Data ingestion entry-point.
+
+Supported sources
+-----------------
+demo
+    Generates a synthetic Cu catalyst dataset using a fixed random seed.
+    Used as the default baseline source.
+
+table
+    Reads a local CSV or Parquet file, renames columns according to a
+    ``column_mapping`` dict, fills missing metadata via ``defaults``, injects a
+    ``target_definition`` column, and writes the standardised output.
+
+mp
+    Materials Project API — intentionally left as :class:`NotImplementedError`.
+    Implement ``_fetch_from_mp()`` in a project-specific extension when needed.
+"""
+
 from __future__ import annotations
 
 import os
@@ -5,13 +23,18 @@ import os
 import numpy as np
 import pandas as pd
 
-from cu_catalyst_ai.utils.io import write_table
+from cu_catalyst_ai.utils.io import read_table, write_table
 from cu_catalyst_ai.utils.logging_utils import get_logger
 
 logger = get_logger(__name__)
 
 
 def generate_demo_dataset(n_samples: int = 240, seed: int = 42) -> pd.DataFrame:
+    """Return a fully synthetic Cu catalyst dataset.
+
+    All values are generated from fixed distributions calibrated to
+    physically plausible ranges for Cu surface DFT calculations.
+    """
     rng = np.random.default_rng(seed)
     facets = rng.choice(["111", "100", "110", "211"], size=n_samples, p=[0.35, 0.25, 0.2, 0.2])
     coord = rng.normal(8.0, 1.0, size=n_samples).clip(5.5, 10.5)
@@ -50,14 +73,119 @@ def generate_demo_dataset(n_samples: int = 240, seed: int = 42) -> pd.DataFrame:
     return df
 
 
-def fetch_data(
-    source_name: str, output_path: str, n_samples: int = 240, seed: int = 42
+def _fetch_from_table(
+    input_path: str,
+    output_path: str,
+    column_mapping: dict[str, str] | None = None,
+    defaults: dict[str, str] | None = None,
+    target_definition: str | None = None,
 ) -> pd.DataFrame:
+    """Read a local CSV/Parquet, apply column mapping, fill defaults, write output.
+
+    Args:
+        input_path: Absolute or project-relative path to the source file.
+        output_path: Where to write the standardised raw table.
+        column_mapping: Mapping of source column name → canonical column name.
+            Only columns that need renaming must be listed.
+        defaults: Constant values to fill for metadata columns that are absent
+            or null in the source file.  Keys are standard column names.
+        target_definition: Name of the registered target definition.  Written
+            as a constant column ``target_definition`` in the output.
+
+    Returns:
+        Standardised ``pd.DataFrame`` with canonical column names.
+    """
+    df = read_table(input_path)
+    logger.info("Loaded %d rows from %s", len(df), input_path)
+
+    # --- Column renaming ---------------------------------------------------
+    if column_mapping:
+        df = df.rename(columns=column_mapping)
+        logger.info("Applied column_mapping: %s", column_mapping)
+
+    # --- Fill defaults for absent/null metadata columns -------------------
+    if defaults:
+        for col, value in defaults.items():
+            if col not in df.columns:
+                df[col] = value
+                logger.info("Injected default column '%s' = %r", col, value)
+            else:
+                # Fill only nulls (don't overwrite real values)
+                null_mask = df[col].isna()
+                if null_mask.any():
+                    df.loc[null_mask, col] = value
+                    logger.info(
+                        "Filled %d nulls in column '%s' with default %r",
+                        null_mask.sum(),
+                        col,
+                        value,
+                    )
+
+    # --- Inject target_definition -----------------------------------------
+    if target_definition is not None:
+        df["target_definition"] = target_definition
+        logger.info("Injected target_definition = %r", target_definition)
+
+    write_table(df, output_path)
+    logger.info("Saved standardised raw table (%d rows) to %s", len(df), output_path)
+    return df
+
+
+def fetch_data(
+    source_name: str,
+    output_path: str,
+    n_samples: int = 240,
+    seed: int = 42,
+    *,
+    input_path: str | None = None,
+    column_mapping: dict[str, str] | None = None,
+    defaults: dict[str, str] | None = None,
+    target_definition: str | None = None,
+    raw_output: str | None = None,
+) -> pd.DataFrame:
+    """Unified data ingestion entry-point.
+
+    Args:
+        source_name: One of ``"demo"``, ``"table"``, or ``"mp"``.
+        output_path: Primary output path (used by demo; table uses *raw_output*
+            when provided, falling back to *output_path*).
+        n_samples: Number of samples to generate (demo source only).
+        seed: Random seed (demo source only).
+        input_path: Path to the local file (table source only).
+        column_mapping: Column rename mapping (table source only).
+        defaults: Default values for missing metadata columns (table source only).
+        target_definition: Registered target definition name (table source only).
+        raw_output: Explicit output path for the standardised raw table
+            (table source only).  Falls back to *output_path* if not provided.
+
+    Returns:
+        The ingested/generated ``pd.DataFrame``.
+
+    Raises:
+        ValueError: For unknown *source_name*.
+        RuntimeError: If required parameters for a source are missing.
+        NotImplementedError: For the ``"mp"`` source (not yet implemented).
+    """
     if source_name == "demo":
         df = generate_demo_dataset(n_samples=n_samples, seed=seed)
         write_table(df, output_path)
         logger.info("Saved demo dataset to %s", output_path)
         return df
+
+    if source_name == "table":
+        if not input_path:
+            raise RuntimeError(
+                "data.input_path must be set when source_name='table'. "
+                "Pass it via: data.input_path=/path/to/your/file.csv"
+            )
+        effective_output = raw_output if raw_output else output_path
+        return _fetch_from_table(
+            input_path=input_path,
+            output_path=effective_output,
+            column_mapping=column_mapping,
+            defaults=defaults,
+            target_definition=target_definition,
+        )
 
     if source_name == "mp":
         api_key = os.getenv("MP_API_KEY")

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 CONFIG_DIR = Path(__file__).parent.parent / "configs"
 
 # All output-file path keys that must be present in the composed config.
@@ -90,3 +92,138 @@ def test_cli_main_is_importable_and_callable() -> None:
     from cu_catalyst_ai.cli import main  # noqa: PLC0415
 
     assert callable(main)
+
+
+def test_real_table_config_parses() -> None:
+    """real_table.yaml must be parseable and contain required data source fields."""
+    from omegaconf import OmegaConf  # noqa: PLC0415
+
+    cfg = OmegaConf.load(CONFIG_DIR / "data" / "real_table.yaml")
+    assert cfg.source_name == "table"
+    assert "raw_output" in cfg
+    assert "cleaned_output" in cfg
+    assert "processed_output" in cfg
+    assert "review_output" in cfg
+    assert "column_mapping" in cfg
+    assert "fill_defaults" in cfg  # renamed from 'defaults' to avoid Hydra conflict
+    assert "target_definition" in cfg
+
+
+def test_co_adsorption_energy_target_config_parses() -> None:
+    """co_adsorption_energy_ev_v1.yaml must be parseable and contain key registry fields."""
+    from omegaconf import OmegaConf  # noqa: PLC0415
+
+    cfg = OmegaConf.load(CONFIG_DIR / "target" / "co_adsorption_energy_ev_v1.yaml")
+    assert cfg.name == "co_adsorption_energy_ev_v1"
+    assert cfg.column == "adsorption_energy"
+    assert cfg.canonical_unit == "eV"
+    assert cfg.required_adsorbate == "CO"
+    assert "supported_unit_conversions" in cfg
+    assert "review_bounds" in cfg
+
+
+def test_real_table_fill_defaults_key_not_reserved() -> None:
+    """real_table.yaml must NOT contain a 'defaults' key (Hydra-reserved).
+
+    The column-fill defaults must live under 'fill_defaults' to avoid a
+    Hydra ConfigKeyError during config-group composition.
+    """
+    from omegaconf import OmegaConf  # noqa: PLC0415
+
+    cfg = OmegaConf.load(CONFIG_DIR / "data" / "real_table.yaml")
+    assert "defaults" not in cfg, (
+        "real_table.yaml must not use the Hydra-reserved key 'defaults'. "
+        "Rename it to 'fill_defaults'."
+    )
+    assert "fill_defaults" in cfg, "Expected 'fill_defaults' key in real_table.yaml"
+    from omegaconf import OmegaConf  # noqa: PLC0415, F811
+
+    fill_defaults_raw = OmegaConf.to_container(cfg.fill_defaults, throw_on_missing=False)
+    assert "provenance" in fill_defaults_raw  # type: ignore[operator]
+
+
+# ---------------------------------------------------------------------------
+# Hydra compose-level tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def _clear_hydra():
+    """Ensure Hydra global state is clean before and after each compose test."""
+    from hydra.core.global_hydra import GlobalHydra  # noqa: PLC0415
+
+    GlobalHydra.instance().clear()
+    yield
+    GlobalHydra.instance().clear()
+
+
+def test_hydra_compose_real_table_no_error(_clear_hydra) -> None:  # noqa: ANN001
+    """Hydra must be able to compose config with data=real_table without error.
+
+    Catches the Hydra 'defaults' key conflict that existed before the rename
+    to 'fill_defaults'.
+    """
+    from hydra import compose, initialize_config_dir  # noqa: PLC0415
+
+    with initialize_config_dir(
+        config_dir=str(CONFIG_DIR.absolute()), version_base=None
+    ):
+        cfg = compose(
+            config_name="config",
+            overrides=[
+                "data=real_table",
+                "data.input_path=/tmp/dummy.csv",
+                "data.fill_defaults.provenance=unit_test",
+            ],
+        )
+    assert cfg.data.source_name == "table"
+    assert cfg.data.input_path == "/tmp/dummy.csv"
+    assert cfg.data.fill_defaults.provenance == "unit_test"
+
+
+def test_hydra_compose_real_table_missing_input_path_is_mandatory(_clear_hydra) -> None:  # noqa: ANN001
+    """data.input_path=??? must remain a mandatory field (OmegaConf raises on access)."""
+    from hydra import compose, initialize_config_dir  # noqa: PLC0415
+    from omegaconf import MissingMandatoryValue  # noqa: PLC0415
+
+    with initialize_config_dir(
+        config_dir=str(CONFIG_DIR.absolute()), version_base=None
+    ):
+        cfg = compose(
+            config_name="config",
+            overrides=["data=real_table", "data.fill_defaults.provenance=unit_test"],
+        )
+    with pytest.raises(MissingMandatoryValue):
+        _ = cfg.data.input_path
+
+
+def test_hydra_compose_real_table_target_config_accessible(_clear_hydra) -> None:  # noqa: ANN001
+    """Composed config must expose cfg.target.review_bounds and unit conversions."""
+    from hydra import compose, initialize_config_dir  # noqa: PLC0415
+
+    with initialize_config_dir(
+        config_dir=str(CONFIG_DIR.absolute()), version_base=None
+    ):
+        cfg = compose(
+            config_name="config",
+            overrides=[
+                "data=real_table",
+                "data.input_path=/tmp/dummy.csv",
+                "data.fill_defaults.provenance=unit_test",
+            ],
+        )
+    assert "review_bounds" in cfg.target
+    assert "supported_unit_conversions" in cfg.target
+    assert cfg.target.review_bounds.adsorption_energy_abs_max == pytest.approx(10.0)
+
+
+def test_hydra_compose_conflicting_group_raises_on_bad_key(_clear_hydra) -> None:  # noqa: ANN001
+    """Composing with an unknown data group name must raise a Hydra error."""
+    from hydra import compose, initialize_config_dir  # noqa: PLC0415
+    from hydra.errors import HydraException  # noqa: PLC0415
+
+    with initialize_config_dir(
+        config_dir=str(CONFIG_DIR.absolute()), version_base=None
+    ):
+        with pytest.raises(HydraException):
+            compose(config_name="config", overrides=["data=nonexistent_source"])

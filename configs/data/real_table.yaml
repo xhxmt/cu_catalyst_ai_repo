@@ -1,0 +1,37 @@
+source_name: table
+n_samples: null   # not used for table source; kept for interface symmetry
+
+# --- Input ---
+# Path to the raw local CSV or Parquet file provided by the user.
+# Override with: data.input_path=/path/to/your/data.csv
+input_path: ???
+
+# --- Outputs (written by fetch stage, consumed by clean stage) ---
+raw_output: data/raw/real/cu_real_raw.parquet
+cleaned_output: data/interim/cu_real_cleaned.parquet
+processed_output: data/processed/real_model_table.parquet
+review_output: data/interim/cu_real_review.parquet
+
+# --- Column mapping ---
+# Keys are source column names in the input file.
+# Values are the canonical standard column names.
+# Only list columns that need renaming; already-standard columns can be omitted.
+# Example:
+#   "Catalyst ID": catalyst_id
+#   "Adsorption Energy (eV)": adsorption_energy
+column_mapping: {}
+
+# --- Fill defaults ---
+# If these columns are absent from the input, fill them with the given constant value.
+# Rows that still lack a required metadata value after defaults are applied go to review.
+# NOTE: key is intentionally "fill_defaults" (not "defaults") to avoid Hydra's reserved key.
+fill_defaults:
+  element: Cu
+  adsorbate: CO
+  provenance: ???           # Must be overridden; provenance is required for traceability
+  unit_adsorption_energy: eV
+
+# --- Target definition ---
+# Must match a registered target name in configs/target/.
+# This value is injected as the target_definition column in the standardised raw table.
+target_definition: co_adsorption_energy_ev_v1

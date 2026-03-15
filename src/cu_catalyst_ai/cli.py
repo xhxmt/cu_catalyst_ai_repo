@@ -5,6 +5,9 @@ Default task (``task=baseline``) runs the full pipeline end-to-end:
 
 Individual stages can be re-run by passing ``task=<stage>``.
 All output file paths are defined in ``configs/config.yaml`` under ``paths:``.
+
+Real table sources (``data=real_table``) additionally write a review file
+containing rows isolated by the cleaning governance layer.
 """
 
 from __future__ import annotations
@@ -15,14 +18,18 @@ import hydra
 from omegaconf import DictConfig, OmegaConf
 
 from cu_catalyst_ai.clean.deduplicate import drop_duplicates
+from cu_catalyst_ai.clean.governance import split_good_review
 from cu_catalyst_ai.clean.normalize_units import normalize_units
+from cu_catalyst_ai.clean.provenance_validator import validate_provenance
 from cu_catalyst_ai.clean.split_registry import assign_splits
-from cu_catalyst_ai.clean.validate_conditions import validate_required_columns
+from cu_catalyst_ai.clean.target_validator import validate_target_definition
+from cu_catalyst_ai.clean.validate_conditions import validate_required_columns, validate_rows
 from cu_catalyst_ai.dataio.mp_fetch import fetch_data
 from cu_catalyst_ai.explain.shap_runner import explain_model
 from cu_catalyst_ai.features.basic_features import build_feature_table
 from cu_catalyst_ai.features.structural_features import add_structural_ratios
 from cu_catalyst_ai.models.train import train_model
+from cu_catalyst_ai.schemas.catalyst import validate_schema_rows
 from cu_catalyst_ai.utils.io import read_table, write_table
 from cu_catalyst_ai.utils.logging_utils import get_logger
 from cu_catalyst_ai.utils.seeds import set_global_seed
@@ -35,28 +42,127 @@ logger = get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _cfg_get(cfg: DictConfig, key: str, default: object | None = None) -> object | None:
+    """Safely read an optional key from a DictConfig, returning *default* if absent."""
+    try:
+        val = OmegaConf.select(cfg, key)
+        return val if val is not None else default
+    except Exception:  # noqa: BLE001
+        return default
+
+
+# ---------------------------------------------------------------------------
 # Individual stage handlers
 # Each function performs exactly one stage and uses paths from cfg.paths.
 # ---------------------------------------------------------------------------
 
 
 def _run_fetch(cfg: DictConfig) -> None:
-    fetch_data(
-        source_name=str(cfg.data.source_name),
-        output_path=str(cfg.data.demo_output),
-        n_samples=int(cfg.data.n_samples),
-        seed=int(cfg.project.seed),
-    )
+    source = str(cfg.data.source_name)
+
+    if source == "table":
+        fetch_data(
+            source_name=source,
+            output_path=str(
+                cfg.data.get(
+                    "raw_output", cfg.data.get("demo_output", "data/raw/real/cu_real_raw.parquet")
+                )
+            ),
+            input_path=str(_cfg_get(cfg, "data.input_path") or ""),
+            column_mapping=dict(_cfg_get(cfg, "data.column_mapping") or {}),
+            defaults=dict(_cfg_get(cfg, "data.fill_defaults") or {}),
+            target_definition=str(_cfg_get(cfg, "data.target_definition") or ""),
+            raw_output=str(_cfg_get(cfg, "data.raw_output") or ""),
+        )
+    else:
+        fetch_data(
+            source_name=source,
+            output_path=str(cfg.data.demo_output),
+            n_samples=int(cfg.data.n_samples),
+            seed=int(cfg.project.seed),
+        )
 
 
 def _run_clean(cfg: DictConfig) -> None:
-    raw_df = read_table(cfg.data.demo_output)
-    clean_df = validate_required_columns(raw_df)
-    clean_df = normalize_units(clean_df)
+    source = str(cfg.data.source_name)
+
+    # Determine input path for this stage
+    if source == "table":
+        raw_path = str(_cfg_get(cfg, "data.raw_output") or cfg.data.get("demo_output"))
+        cleaned_path = str(cfg.data.cleaned_output)
+        review_path = str(
+            _cfg_get(cfg, "data.review_output") or "data/interim/cu_real_review.parquet"
+        )
+    else:
+        raw_path = str(cfg.data.demo_output)
+        cleaned_path = str(cfg.data.cleaned_output)
+        review_path = None  # demo source won't produce a separate review file normally
+
+    raw_df = read_table(raw_path)
+
+    # --- Layer 1: Structural column check (raises on failure) ---------------
+    raw_df = validate_required_columns(raw_df)
+
+    # --- Layer 2: Unit normalisation + flag unknown units -------------------
+    # Use unit conversions from target config when available (single source of truth).
+    unit_conversions_raw = _cfg_get(cfg, "target.supported_unit_conversions")
+    unit_conversions = (
+        dict(unit_conversions_raw) if unit_conversions_raw is not None else None
+    )
+    raw_df = normalize_units(raw_df, unit_conversions=unit_conversions)
+
+    # --- Layer 3: Row-level governance (flags, does not raise) --------------
+    if source == "table":
+        target_def_name = str(_cfg_get(cfg, "data.target_definition") or "")
+        required_ads = str(_cfg_get(cfg, "target.required_adsorbate") or "CO")
+        raw_df = validate_target_definition(
+            raw_df, target_def_name, required_adsorbate=required_ads
+        )
+        raw_df = validate_provenance(raw_df)
+        raw_df = validate_rows(
+            raw_df,
+            adsorption_energy_abs_max=float(
+                _cfg_get(cfg, "target.review_bounds.adsorption_energy_abs_max") or 10.0
+            ),
+            surface_energy_min=float(
+                _cfg_get(cfg, "target.review_bounds.surface_energy_min") or 0.0
+            ),
+            electronegativity_min=float(
+                _cfg_get(cfg, "target.review_bounds.electronegativity_min") or 0.0
+            ),
+            electronegativity_max=float(
+                _cfg_get(cfg, "target.review_bounds.electronegativity_max") or 4.0
+            ),
+        )
+        # --- Layer 4: Pydantic schema validation (flags, does not raise) ----
+        raw_df = validate_schema_rows(raw_df)
+        clean_df, review_df = split_good_review(raw_df)
+
+        # Write review file regardless of size
+        if review_path:
+            write_table(review_df, review_path)
+            logger.info("Review file: %d rows → %s", len(review_df), review_path)
+
+        logger.info("Governance result: accepted=%d reviewed=%d", len(clean_df), len(review_df))
+
+        if clean_df.empty:
+            raise RuntimeError(
+                f"Cleaning produced zero accepted rows (all {len(review_df)} rows were isolated). "
+                "Check the review file for details: " + (review_path or "<unknown>")
+            )
+    else:
+        clean_df = raw_df
+
+    # --- Deduplication + split assignment ----------------------------------
     clean_df = drop_duplicates(clean_df)
     clean_df = assign_splits(clean_df, seed=int(cfg.project.seed))
-    write_table(clean_df, cfg.data.cleaned_output)
-    logger.info("Saved cleaned data to %s", cfg.data.cleaned_output)
+
+    write_table(clean_df, cleaned_path)
+    logger.info("Saved cleaned data (%d rows) to %s", len(clean_df), cleaned_path)
 
 
 def _run_featurize(cfg: DictConfig) -> None:

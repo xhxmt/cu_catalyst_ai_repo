@@ -3,6 +3,7 @@ defaults:
   - features: baseline
   - model: rf
   - cv: kfold5
+  - target: co_adsorption_energy_ev_v1
   - _self_
 
 project:
@@ -34,11 +35,9 @@ paths:
   report_output: ${paths.reports_dir}/${model.name}_summary.md
 
 data:
-  n_samples: 240
-  source_name: demo
-  demo_output: data/raw/demo/cu_demo_raw.parquet
-  cleaned_output: data/interim/cu_cleaned.parquet
-  processed_output: data/processed/model_table.parquet
+  # Source-specific keys (source_name, n_samples, *_output paths) live in the
+  # data group files (configs/data/*.yaml) so that switching groups (data=real_table)
+  # actually takes effect.  Only truly global, non-source-specific defaults stay here.
   mp_collection: materials/summary
 
 features:

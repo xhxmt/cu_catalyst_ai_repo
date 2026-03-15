@@ -1,0 +1,27 @@
+name: co_adsorption_energy_ev_v1
+column: adsorption_energy
+canonical_unit: eV
+unit_column: unit_adsorption_energy
+required_adsorbate: CO
+
+# Units that can be converted to eV automatically.
+# Any unit not listed here causes the row to enter review.
+supported_unit_conversions:
+  eV: 1.0
+  meV: 0.001
+  kJ/mol: 0.010364
+
+# Hard-invalid rules: rows matching these conditions are isolated immediately.
+# These are structural impossibilities regardless of physical context.
+hard_invalid_rules:
+  avg_neighbor_distance_le_zero: true    # avg_neighbor_distance <= 0
+  coordination_number_lt_zero: true      # coordination_number < 0
+  adsorption_energy_non_numeric: true    # adsorption_energy cannot be cast to float
+
+# Soft review bounds: rows outside these thresholds are flagged for manual review.
+# They are NOT automatically rejected — a domain expert should confirm.
+review_bounds:
+  adsorption_energy_abs_max: 10.0        # |adsorption_energy| > 10 eV
+  surface_energy_min: 0.0               # surface_energy <= 0
+  electronegativity_min: 0.0            # electronegativity <= 0
+  electronegativity_max: 4.0            # electronegativity > 4

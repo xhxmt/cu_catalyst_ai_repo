@@ -1,0 +1,45 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "MLflow UI",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "mlflow", "ui", "--port", "5000", "--backend-store-uri", "runs/"],
+      "port": 5000
+    },
+    {
+      "name": "Pipeline: baseline (demo)",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "python", "-m", "cu_catalyst_ai.cli", "task=baseline"],
+      "port": null
+    },
+    {
+      "name": "Pipeline: fetch (demo)",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "python", "-m", "cu_catalyst_ai.cli", "task=fetch"],
+      "port": null
+    },
+    {
+      "name": "Pipeline: fetch (real_table)",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": [
+        "run", "python", "-m", "cu_catalyst_ai.cli",
+        "task=fetch", "data=real_table",
+        "data.input_path=???",
+        "data.fill_defaults.provenance=???"
+      ],
+      "port": null
+    },
+    {
+      "name": "Pipeline: clean (real_table)",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": [
+        "run", "python", "-m", "cu_catalyst_ai.cli",
+        "task=clean", "data=real_table",
+        "data.input_path=???",
+        "data.fill_defaults.provenance=???"
+      ],
+      "port": null
+    }
+  ]
+}
