@@ -1,68 +1,98 @@
-# Development Workflow
+# 开发工作流
 
-## Purpose
-This document defines how Google Antigravity, Codex, and Claude Code work together in this repository.
-The goal is to keep implementation fast while preserving review quality, traceability, and predictable change scope.
+## 目的
 
-## Tool Responsibilities
+本文档说明 Google Antigravity、Codex 和 Claude Code 在本仓库中的协作方式。
+目标是在保持实现速度的同时，确保评审质量、可追踪性和变更范围可控。
+
+## 工具职责
+
 ### Google Antigravity
-Google Antigravity is the primary implementation environment. It is responsible for active coding, interactive testing, browser-based verification, and producing reviewable artifacts such as screenshots, verification notes, or implementation summaries.
+
+Google Antigravity 是主要实现环境，负责实际编码、本地运行、浏览器验证，以及生成可供评审的产物，例如截图、验证说明或实现摘要。
 
 ### Codex
-Codex is the default planning and repository-structure assistant. It should be used first for multi-step work, risky changes, refactors, and tasks that touch multiple files. Codex should usually inspect the repository, produce a bounded implementation plan, list affected files, identify invariants, propose tests, and point out missing repository guidance. Codex may edit code only when explicitly instructed.
+
+Codex 默认负责规划和仓库结构建议。对于多步骤任务、高风险变更、重构或涉及多个文件的工作，应先使用 Codex。Codex 通常应先检查仓库、给出有边界的实现计划、列出受影响文件、识别需要保持的不变量、提出测试建议，并指出缺失的仓库规范。除非被明确要求，否则 Codex 不应直接改代码。
 
 ### Claude Code
-Claude Code is the review and quality-gate assistant. It should be used after implementation to review correctness, architecture drift, missing tests, edge cases, maintainability issues, and security risks. Claude Code hooks may run standard checks such as formatting, linting, tests, or secret scanning.
 
-## Standard Task Flow
-### Low-complexity task
-Use Antigravity to implement the change directly. After the change, use Claude Code to perform a review and run checks.
+Claude Code 默认负责评审和质量门禁。它应在实现完成后检查正确性、架构偏移、测试缺口、边界情况、可维护性和安全风险。Claude Code 的 hooks 可以运行格式化、lint、测试或 secret scan 等标准检查。
 
-### Medium-complexity task
-Ask Codex for a plan first. Review the plan. Let Antigravity implement the approved plan. Then let Claude Code review the result and run checks.
+## 标准任务流程
 
-### High-complexity or high-risk task
-Ask Codex for a detailed implementation plan first. Review and approve the plan manually. Let Antigravity implement the work in small steps. Run Claude Code review after each major step and again before merge. Manually spot-check the final result.
+### 低复杂度任务
 
-## Complexity Guidelines
-A task should be treated as medium or high complexity when it changes multiple files, affects public interfaces, modifies schema or persistence logic, touches auth or permissions, changes deployment or CI behavior, introduces new dependencies, or requires a migration or refactor.
+直接用 Antigravity 实现，之后由 Claude Code 进行评审并运行相关检查。
 
-## Required Deliverables per Task
-Every completed task should leave behind the following:
-1. a short implementation summary
-2. a list of changed files
-3. commands run for verification
-4. test outcomes
-5. remaining risks or follow-up items
+### 中等复杂度任务
 
-For UI, browser, workflow, or API-journey changes, include a screenshot or browser walkthrough artifact when possible.
+先请 Codex 给出方案。确认方案后，由 Antigravity 按方案实现，再由 Claude Code 做评审和检查。
 
-## Merge Gate
-A branch is ready to merge only when all of the following are true:
-1. the implementation matches the approved scope
-2. required checks pass
-3. Claude Code review has no unresolved blocking issue
-4. a human has completed a quick spot verification
+### 高复杂度或高风险任务
 
-## Workspace Recommendations for Antigravity
-It is recommended to keep three working contexts:
+先请 Codex 给出详细实现方案，并人工确认。然后由 Antigravity 分步骤实现。每完成一个重要阶段，都要运行 Claude Code 评审，最终合并前再做一次完整评审和人工抽查。
+
+## 复杂度判断建议
+
+如果任务满足以下任一情况，应按中等或高复杂度处理：
+
+- 变更多个文件
+- 影响公共接口
+- 修改 schema 或持久化逻辑
+- 涉及认证、权限或安全
+- 修改部署或 CI 行为
+- 引入新依赖
+- 需要迁移或重构
+
+## 每个任务的必备交付物
+
+每个完成的任务应留下：
+
+1. 一份简短的实现摘要
+2. 一份修改文件列表
+3. 一份验证命令列表
+4. 一份测试结果说明
+5. 一份剩余风险或后续事项说明
+
+对于 UI、浏览器流程、工作流或 API 相关变更，尽可能补充截图或浏览器验证记录。
+
+## 合并门禁
+
+一个分支只有在满足以下条件后才可合并：
+
+1. 实现结果符合已批准范围
+2. 必要检查已通过
+3. Claude Code 评审中没有未解决的阻塞问题
+4. 人工已完成一次快速抽查
+
+## Antigravity 的工作区建议
+
+建议保留三个上下文：
 
 ### Build Workspace
-Use for active coding, local runs, and primary implementation.
+
+用于主动编码、本地运行和主要实现工作。
 
 ### Verify Workspace
-Use for browser checks, UI flow validation, API verification, and artifact collection.
+
+用于浏览器检查、UI 流程验证、API 验证和产物收集。
 
 ### Ops Workspace
-Use for documentation lookup, environment inspection, and connected tools.
 
-## Review Cadence
-For large tasks, do not wait until the end to review everything. Review at the end of each meaningful step. This reduces the chance of broad architectural drift and makes fixes smaller.
+用于查阅文档、检查环境和使用外部工具。
 
-## Escalation Rules
-When a review identifies a major issue:
-- If the issue is local and mechanical, return it to Antigravity for a focused fix.
-- If the issue suggests the plan was flawed, ask Codex to produce a narrower repair plan before more code is changed.
+## 评审节奏
 
-## Documentation Maintenance
-When recurring mistakes appear, update `AGENTS.md`, `.agents/skills/`, `.claude/commands/`, or this workflow file so the guidance improves over time.
+对于较大的任务，不要等到最后一次性评审。应在每个有意义的阶段结束后进行评审，以减少大范围架构偏移，并让修复保持在较小范围内。
+
+## 升级处理规则
+
+如果评审发现重大问题：
+
+- 如果问题局部且机械，可直接交回 Antigravity 做定点修复
+- 如果问题说明原方案本身有缺陷，应先请 Codex 给出更小范围的修复方案，再继续改动
+
+## 文档维护
+
+如果发现某类错误反复出现，应更新 `AGENTS.md`、`.agents/skills/`、`.claude/commands/` 或本文档，以持续提升仓库协作规范。

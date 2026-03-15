@@ -1,161 +1,185 @@
-# Project Rules
+# 项目规则
 
-## Mission
-Build a reproducible pure-Python research workflow for Cu catalyst screening.
+## 使命
 
-The main priority is an end-to-end ML loop:
-data -> cleaning -> features -> training -> explanation -> report
+构建一个可复现的纯 Python Cu 催化剂筛选研究工作流。
 
-DFT automation is included as a modular extension, but it is not the first milestone.
+当前最高优先级是打通端到端 ML 闭环：
 
-This repository is developed with Google Antigravity as the primary IDE and execution environment.
-Codex is used for planning, task decomposition, repository guidance, and reusable agent skills.
-Claude Code is used for review, automated checks, merge gating, and quality control.
+`data -> cleaning -> features -> training -> explanation -> report`
 
-The default engineering goal is to deliver reproducible, high-quality changes with minimal risk, clear tests, explicit review notes, and stable research outputs.
+DFT 自动化作为可插拔扩展存在，但不是第一阶段里程碑。
 
-## Roles
+本仓库以 Google Antigravity 作为主要 IDE 和执行环境。
+Codex 默认用于规划、任务拆解、仓库指导和复用型 agent 技能。
+Claude Code 默认用于评审、自动检查、合并门禁和质量控制。
+
+默认工程目标是在尽量低风险的前提下，交付可复现、高质量的变更，并配有清晰测试、明确评审说明和稳定研究产物。
+
+## 角色分工
 
 ### Antigravity
-- Primary implementation agent
-- Main owner of feature branches during active development
-- Responsible for code changes, local runs, browser verification when applicable, and artifact generation
+
+- 主要实现代理
+- 在活跃开发阶段默认拥有功能分支的主要写入权
+- 负责代码修改、本地运行、浏览器验证和产物生成
 
 ### Codex
-- Planning and decomposition by default
-- Maintains repository guidance through `AGENTS.md` and `.agents/skills/`
-- May create focused patches only when explicitly requested
+
+- 默认负责规划与拆解
+- 通过 `AGENTS.md` 和 `.agents/skills/` 维护仓库级指导
+- 仅在被明确要求时创建聚焦补丁
 
 ### Claude Code
-- Review and gatekeeping by default
-- Responsible for correctness review, risk review, test review, security review, and merge checks
-- Hooks may run automated checks, but should not silently rewrite production code without approval
 
-## Default Workflow
-1. Read the request and identify the affected area.
-2. For any medium or high complexity task, ask Codex to produce an implementation plan before editing.
-3. Approve the plan before coding.
-4. Let Antigravity implement the task on a dedicated feature branch.
-5. Require Claude Code review before merge.
-6. Merge only after checks, review, and manual spot verification pass.
+- 默认负责评审与门禁
+- 负责正确性评审、风险评审、测试评审、安全评审和合并检查
+- hooks 可以运行自动检查，但未经批准不得静默改写生产代码
 
-## When Planning Is Mandatory
-Planning is required when any of the following is true:
-- More than one production file will change
-- Public interfaces may change
-- The task touches schema, target definitions, data contracts, or reusable training interfaces
-- Database, auth, permissions, secrets, infra, payments, or deletion flows are touched
-- The task includes refactoring, migration, or performance-sensitive logic
-- The task affects build, deployment, or test infrastructure
-- The task changes DFT generation, parsing, or dataset append rules
+## 默认工作流
 
-## Working Style
-- Read before editing
-- Plan first for tasks touching multiple files
-- Prefer small, testable changes
-- Preserve file formats, schema, and column names unless explicitly changing them
-- Prefer minimal diffs over broad rewrites
-- Preserve public interfaces unless the task explicitly allows changing them
-- Avoid introducing new frameworks or heavy dependencies without written justification
-- Keep configuration in dedicated config files whenever possible
-- Do not hardcode secrets, tokens, local absolute paths, or machine-specific settings
-- Add docstrings to new nontrivial modules and functions
-- Add type hints to new Python functions whenever practical
+1. 阅读请求并识别受影响区域
+2. 对中等或高复杂度任务，先让 Codex 产出实现方案
+3. 方案获批后再编码
+4. 由 Antigravity 在独立功能分支上实现
+5. 合并前要求 Claude Code 完成评审
+6. 只有在检查、评审和人工抽查通过后才可合并
 
-## Branch Rules
-- One main writing agent per feature branch
-- Antigravity owns feature branch writes by default
-- Codex and Claude Code should stay read-only unless explicitly asked to patch
-- Do not let multiple agents perform overlapping large edits on the same branch
+## 必须先规划的情况
 
-## Required Checks
-Before considering a task done, run the relevant subset of the following:
+满足以下任一条件时必须先规划：
+
+- 会修改多个生产文件
+- 可能影响公共接口
+- 涉及 schema、target definition、数据契约或可复用训练接口
+- 涉及数据库、认证、权限、密钥、基础设施、支付或删除流程
+- 包含重构、迁移或性能敏感逻辑
+- 会影响构建、部署或测试基础设施
+- 会改变 DFT 生成、解析或数据集追加规则
+
+## 工作方式
+
+- 改之前先阅读
+- 涉及多个文件时先出方案
+- 优先做小而可测的改动
+- 除非明确要求修改，否则保留现有文件格式、schema 和列名
+- 优先最小 diff，而不是大范围重写
+- 除非任务明确允许，否则保持公共接口稳定
+- 没有书面理由时，不要引入新框架或重量级依赖
+- 配置尽量放在专门配置文件中
+- 不要硬编码密钥、token、本机绝对路径或机器相关设置
+- 新增的非平凡模块和函数应写 docstring
+- 新增 Python 函数应尽量补类型标注
+
+## 分支规则
+
+- 每个功能分支只应有一个主要写入代理
+- 默认由 Antigravity 负责功能分支写入
+- 除非被明确要求打补丁，否则 Codex 和 Claude Code 应保持只读
+- 不要让多个代理在同一分支上做大范围重叠编辑
+
+## 必要检查
+
+在认为任务完成前，应运行相关子集：
+
 - `uv run ruff check .`
 - `uv run ruff format .`
 - `uv run pytest`
-- typecheck when applicable
-- integration tests when affected
-- secret scan for config or infra changes
-- dependency or security audit when dependencies change
+- 适用时运行类型检查
+- 受影响时运行集成测试
+- 配置或基础设施变更时运行 secret scan
+- 依赖变更时运行依赖或安全审计
 
-Also ensure:
-- training metrics are saved under `reports/tables/`
-- figures are saved under `reports/figures/`
+同时确保：
 
-## Data Rules
-- Raw data is append-only
-- Cleaned and processed data must be versionable
-- Unknown units or missing provenance must be flagged for review
-- Never mix target definitions silently
-- Never mix incompatible calculation settings into the same training target without explicit documentation
-- Schema changes must be reflected in validation logic and tests
-- Experimental feedback data must be stored with provenance and version tags
+- 训练指标保存在 `reports/tables/`
+- 图像产物保存在 `reports/figures/`
 
-## Model Rules
-- Keep a baseline model available at all times
-- Use the same evaluation protocol across models
-- Save MAE, RMSE, and R2 for every run
-- Produce parity and learning-curve plots for every train run
-- If explainability is enabled, save the related outputs in a stable and reproducible location
-- Do not silently change target columns, split logic, or evaluation metrics
+## 数据规则
 
-## DFT Rules
-- Generation, parsing, and sanity checks must stay separate
-- Do not auto-submit HPC jobs in the default workflow
-- Suspicious parsed results must be flagged, not silently accepted
-- DFT modules are extensions to the ML workflow and must not block the main ML milestone
-- Appending DFT outputs to training data requires explicit validation and provenance tracking
+- 原始数据只能追加，不能覆盖改写
+- 清洗和处理后的数据必须可版本化
+- 未知单位或缺少 provenance 的数据必须标记为待审查
+- 不得静默混用不同 target definition
+- 未经明确文档说明，不得把不兼容计算设置混入同一训练目标
+- schema 变更必须同步更新验证逻辑和测试
+- 实验反馈数据必须带 provenance 和版本标签
 
-## Testing Rules
-- If behavior changes, tests must be added or updated
-- If a bug is fixed, add a regression test when practical
-- If code paths branch on edge cases, add at least one edge-case test
-- Never remove failing tests without explaining why in the review summary
-- If schema or model inputs change, update validation tests
-- If plotting or reporting outputs change, verify file generation paths
+## 模型规则
 
-## Review Expectations
+- 始终保留一个基线模型
+- 各模型必须使用同一套评估协议
+- 每次运行都要保存 MAE、RMSE 和 R2
+- 每次训练都要产出 parity plot 和 learning curve
+- 若启用可解释性，相关产物必须保存在稳定且可复现的位置
+- 不得静默修改目标列、数据划分逻辑或评估指标
 
-Every implementation summary must include:
-- what changed
-- which files changed
-- what commands were run
-- what tests passed
-- remaining risks or follow-up items
+## DFT 规则
 
-Every review summary must include:
-- blocking issues
-- non-blocking issues
-- risk assessment
-- suggested minimal fixes
+- 生成、解析和 sanity check 必须保持分离
+- 默认工作流中不得自动提交 HPC 任务
+- 可疑的解析结果必须标记出来，不能静默接受
+- DFT 模块是 ML 工作流的扩展，不能阻塞主要 ML 里程碑
+- 将 DFT 输出追加进训练数据前，必须显式完成校验和 provenance 跟踪
 
-## Artifact Expectations
-For UI, browser, API journey, workflow, or report-output changes, Antigravity should attach at least one of:
-- screenshot
-- browser walkthrough
-- implementation summary artifact
+## 测试规则
 
-For research runs, artifact summaries should include:
-- dataset version
-- model name
-- config used
-- output paths for metrics and figures
+- 行为变化时必须新增或更新测试
+- 修复 bug 时，应在可行情况下加入回归测试
+- 如果代码路径按边界情况分叉，至少补一个边界测试
+- 不得删除失败测试，除非在评审摘要中解释原因
+- 如果 schema 或模型输入变了，必须更新验证测试
+- 如果绘图或报告输出变了，必须验证生成路径
 
-## Directory Guidance
-- `src/` contains production code
-- `tests/` contains test code only
-- `docs/` contains workflow, architecture, review, and decision records
-- `.agents/skills/` contains reusable Codex skills
-- `.claude/commands/` contains reusable Claude Code review commands
-- `scripts/hooks/` contains hook scripts used by Claude Code or local workflows
-- `reports/tables/` stores metrics and tabular outputs
-- `reports/figures/` stores plots and visual outputs
+## 评审期望
 
-## Do Not
-- Do not skip review for medium or high risk changes
-- Do not mix planning notes into production code files
-- Do not silently change stable interfaces
-- Do not silently change schema, target definitions, or split logic
-- Do not auto-merge without review and checks
-- Do not bypass hooks for convenience unless explicitly approved and documented
-- Do not let DFT-side complexity derail the main ML workflow milestone
+每份实现摘要都必须包含：
+
+- 改了什么
+- 改了哪些文件
+- 运行了哪些命令
+- 哪些测试通过了
+- 剩余风险或后续事项
+
+每份评审摘要都必须包含：
+
+- 阻塞问题
+- 非阻塞问题
+- 风险评估
+- 建议的最小修复项
+
+## 产物要求
+
+对于 UI、浏览器、API 流程、工作流或报告输出相关变更，Antigravity 应至少附带以下之一：
+
+- 截图
+- 浏览器演示记录
+- 面向评审的实现摘要产物
+
+对于研究运行，产物摘要应包含：
+
+- 数据集版本
+- 模型名称
+- 使用的配置
+- 指标和图像的输出路径
+
+## 目录说明
+
+- `src/`：生产代码
+- `tests/`：仅放测试代码
+- `docs/`：工作流、架构、评审和决策记录
+- `.agents/skills/`：可复用的 Codex 技能
+- `.claude/commands/`：可复用的 Claude Code 评审命令
+- `scripts/hooks/`：Claude Code 或本地流程使用的 hook 脚本
+- `reports/tables/`：指标和表格输出
+- `reports/figures/`：图像输出
+
+## 不要做的事
+
+- 不要跳过中高风险变更的评审
+- 不要把规划说明混入生产代码文件
+- 不要静默修改稳定接口
+- 不要静默修改 schema、target definition 或数据划分逻辑
+- 不要绕过评审和检查直接自动合并
+- 未经明确批准和记录，不要为了方便而绕过 hooks
+- 不要让 DFT 侧复杂度拖慢主要 ML 工作流里程碑

@@ -1,60 +1,70 @@
-# Review Checklist
+# 评审检查清单
 
-Use this checklist during Claude Code review, human review, or final merge checks.
+可在 Claude Code 评审、人工评审或合并前最终检查时使用本清单。
 
-## Functional Correctness
-- Does the change solve the requested problem?
-- Do happy-path flows still work?
-- Are edge cases handled explicitly?
-- Are errors surfaced clearly and safely?
+## 功能正确性
 
-## Scope Control
-- Does the branch stay within the approved task boundary?
-- Were unrelated files or behaviors changed?
-- Were stable interfaces preserved where expected?
+- 这次改动是否解决了目标问题？
+- 主流程是否仍然正常？
+- 边界情况是否被明确处理？
+- 错误是否以清晰且安全的方式暴露？
 
-## Architecture and Maintainability
-- Does the change fit existing patterns?
-- Is the design simpler or at least no more confusing than before?
-- Are names, boundaries, and responsibilities clear?
-- Has temporary debugging code been removed?
+## 范围控制
 
-## Tests
-- Were tests added or updated when behavior changed?
-- Do tests cover the main path and at least one edge case?
-- Is there a regression test for a bug fix when practical?
-- Are tests stable rather than flaky or timing-dependent?
+- 当前分支是否仍在已批准范围内？
+- 是否改动了无关文件或无关行为？
+- 预期应保持稳定的接口是否确实保持稳定？
 
-## Tooling and Verification
-- Was formatting run?
-- Was linting run?
-- Was type checking run when relevant?
-- Were affected tests run?
-- Were commands documented in the implementation summary?
+## 架构与可维护性
 
-## Security and Safety
-- Are secrets kept out of code and logs?
-- Are permissions, auth, or security-sensitive paths handled carefully?
-- Are shell commands, file operations, and external calls validated?
-- Were new dependencies checked for necessity and risk?
+- 改动是否符合现有模式？
+- 设计是否更简单，或至少没有变得更混乱？
+- 命名、边界和职责是否清晰？
+- 临时调试代码是否已移除？
 
-## Data and State
-- Are schema or storage changes backward-aware?
-- Are migrations safe and reversible where needed?
-- Is failure behavior acceptable if part of the workflow breaks?
-- Are retries, idempotency, and duplication handled where relevant?
+## 测试
 
-## Observability
-- Are logs useful without leaking sensitive data?
-- Are important failures discoverable?
-- Is there enough information to debug production issues?
+- 行为变化时是否新增或更新了测试？
+- 测试是否覆盖主路径和至少一个边界情况？
+- 修复 bug 时是否在可行情况下加入了回归测试？
+- 测试是否稳定，而不是容易抖动或依赖时序？
 
-## User Experience
-- For UI or API behavior changes, is the resulting flow understandable?
-- Were screenshots or verification artifacts attached when relevant?
-- Are error messages clear to the user?
+## 工具与验证
 
-## Release Readiness
-- Are there unresolved blocking issues?
-- Are non-blocking follow-ups documented?
-- Is the branch safe to merge today?
+- 是否运行了格式化？
+- 是否运行了 lint？
+- 在适用时是否运行了类型检查？
+- 是否运行了受影响的测试？
+- 实现摘要中是否记录了执行过的命令？
+
+## 安全性
+
+- 密钥和敏感信息是否没有进入代码或日志？
+- 权限、认证或安全敏感路径是否被谨慎处理？
+- shell 命令、文件操作和外部调用是否经过校验？
+- 新依赖是否评估过必要性和风险？
+
+## 数据与状态
+
+- schema 或存储变更是否考虑了向后兼容？
+- 迁移是否安全且在必要时可回滚？
+- 如果工作流中的某一环失败，失败行为是否可接受？
+- 在适用时，是否处理了重试、幂等性和重复数据问题？
+
+## 可观测性
+
+- 日志是否有用且不泄露敏感信息？
+- 关键失败是否可被发现？
+- 是否有足够信息用于排查线上问题？
+
+## 用户体验
+
+- 对于 UI 或 API 行为变更，最终流程是否易于理解？
+- 在相关场景下是否附带了截图或验证产物？
+- 错误信息对用户来说是否清晰？
+
+## 发布就绪性
+
+- 是否仍存在未解决的阻塞问题？
+- 非阻塞后续事项是否已记录？
+- 当前分支是否适合今天合并？
