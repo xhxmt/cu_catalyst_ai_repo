@@ -165,9 +165,7 @@ def test_hydra_compose_real_table_no_error(_clear_hydra) -> None:  # noqa: ANN00
     """
     from hydra import compose, initialize_config_dir  # noqa: PLC0415
 
-    with initialize_config_dir(
-        config_dir=str(CONFIG_DIR.absolute()), version_base=None
-    ):
+    with initialize_config_dir(config_dir=str(CONFIG_DIR.absolute()), version_base=None):
         cfg = compose(
             config_name="config",
             overrides=[
@@ -186,9 +184,7 @@ def test_hydra_compose_real_table_missing_input_path_is_mandatory(_clear_hydra) 
     from hydra import compose, initialize_config_dir  # noqa: PLC0415
     from omegaconf import MissingMandatoryValue  # noqa: PLC0415
 
-    with initialize_config_dir(
-        config_dir=str(CONFIG_DIR.absolute()), version_base=None
-    ):
+    with initialize_config_dir(config_dir=str(CONFIG_DIR.absolute()), version_base=None):
         cfg = compose(
             config_name="config",
             overrides=["data=real_table", "data.fill_defaults.provenance=unit_test"],
@@ -201,9 +197,7 @@ def test_hydra_compose_real_table_target_config_accessible(_clear_hydra) -> None
     """Composed config must expose cfg.target.review_bounds and unit conversions."""
     from hydra import compose, initialize_config_dir  # noqa: PLC0415
 
-    with initialize_config_dir(
-        config_dir=str(CONFIG_DIR.absolute()), version_base=None
-    ):
+    with initialize_config_dir(config_dir=str(CONFIG_DIR.absolute()), version_base=None):
         cfg = compose(
             config_name="config",
             overrides=[
@@ -222,8 +216,56 @@ def test_hydra_compose_conflicting_group_raises_on_bad_key(_clear_hydra) -> None
     from hydra import compose, initialize_config_dir  # noqa: PLC0415
     from hydra.errors import HydraException  # noqa: PLC0415
 
-    with initialize_config_dir(
-        config_dir=str(CONFIG_DIR.absolute()), version_base=None
-    ):
+    with initialize_config_dir(config_dir=str(CONFIG_DIR.absolute()), version_base=None):
         with pytest.raises(HydraException):
             compose(config_name="config", overrides=["data=nonexistent_source"])
+
+
+# ---------------------------------------------------------------------------
+# New cathub config smoke tests
+# ---------------------------------------------------------------------------
+
+
+def test_cathub_data_config_parses() -> None:
+    """configs/data/cathub.yaml must be parseable with required fields."""
+    from omegaconf import OmegaConf  # noqa: PLC0415
+
+    cfg = OmegaConf.load(CONFIG_DIR / "data" / "cathub.yaml")
+    assert cfg.source_name == "cathub"
+    assert "raw_output" in cfg
+    assert "cleaned_output" in cfg
+    assert "processed_output" in cfg
+    assert "review_output" in cfg
+    assert "api_url" in cfg
+    assert "query_filter" in cfg
+    assert "target_definition" in cfg
+
+
+def test_cathub_minimal_feature_config_parses() -> None:
+    """configs/features/cathub_minimal.yaml must list the four allowed columns."""
+    from omegaconf import OmegaConf  # noqa: PLC0415
+
+    cfg = OmegaConf.load(CONFIG_DIR / "features" / "cathub_minimal.yaml")
+    use_cols = OmegaConf.to_container(cfg.use_columns, resolve=True)
+    assert isinstance(use_cols, list)
+    assert "coordination_number" in use_cols
+    assert "avg_neighbor_distance" in use_cols
+    assert "electronegativity" in use_cols
+    assert "facet" in use_cols
+    # These must NOT be present — they are unavailable from the API.
+    assert "d_band_center" not in use_cols
+    assert "surface_energy" not in use_cols
+
+
+def test_hydra_compose_cathub_no_error(_clear_hydra) -> None:  # noqa: ANN001
+    """Hydra can compose config with data=cathub features=cathub_minimal."""
+    from hydra import compose, initialize_config_dir  # noqa: PLC0415
+
+    with initialize_config_dir(config_dir=str(CONFIG_DIR.absolute()), version_base=None):
+        cfg = compose(
+            config_name="config",
+            overrides=["data=cathub", "features=cathub_minimal"],
+        )
+    assert cfg.data.source_name == "cathub"
+    assert "raw_output" in cfg.data
+    assert "api_url" in cfg.data

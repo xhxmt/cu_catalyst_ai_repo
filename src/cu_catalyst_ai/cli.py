@@ -78,6 +78,31 @@ def _run_fetch(cfg: DictConfig) -> None:
             target_definition=str(_cfg_get(cfg, "data.target_definition") or ""),
             raw_output=str(_cfg_get(cfg, "data.raw_output") or ""),
         )
+    elif source == "cathub":
+        query_filter_raw = _cfg_get(cfg, "data.query_filter")
+        from omegaconf import OmegaConf  # noqa: PLC0415
+
+        query_filter = (
+            dict(OmegaConf.to_container(query_filter_raw, resolve=True))  # type: ignore[arg-type]
+            if query_filter_raw is not None
+            else {}
+        )
+        fetch_data(
+            source_name="cathub",
+            output_path=str(
+                _cfg_get(cfg, "data.raw_output") or "data/raw/cathub/cu_cathub_raw.parquet"
+            ),
+            raw_output=str(_cfg_get(cfg, "data.raw_output") or ""),
+            target_definition=str(
+                _cfg_get(cfg, "data.target_definition") or "co_adsorption_energy_ev_v1"
+            ),
+            cathub_kwargs={
+                "api_url": str(
+                    _cfg_get(cfg, "data.api_url") or "https://api.catalysis-hub.org/graphql"
+                ),
+                "query_filter": query_filter,
+            },
+        )
     else:
         fetch_data(
             source_name=source,
@@ -90,8 +115,8 @@ def _run_fetch(cfg: DictConfig) -> None:
 def _run_clean(cfg: DictConfig) -> None:
     source = str(cfg.data.source_name)
 
-    # Determine input path for this stage
-    if source == "table":
+    # Determine input/output paths for this stage.
+    if source in ("table", "cathub"):
         raw_path = str(_cfg_get(cfg, "data.raw_output") or cfg.data.get("demo_output"))
         cleaned_path = str(cfg.data.cleaned_output)
         review_path = str(
@@ -110,13 +135,11 @@ def _run_clean(cfg: DictConfig) -> None:
     # --- Layer 2: Unit normalisation + flag unknown units -------------------
     # Use unit conversions from target config when available (single source of truth).
     unit_conversions_raw = _cfg_get(cfg, "target.supported_unit_conversions")
-    unit_conversions = (
-        dict(unit_conversions_raw) if unit_conversions_raw is not None else None
-    )
+    unit_conversions = dict(unit_conversions_raw) if unit_conversions_raw is not None else None
     raw_df = normalize_units(raw_df, unit_conversions=unit_conversions)
 
     # --- Layer 3: Row-level governance (flags, does not raise) --------------
-    if source == "table":
+    if source in ("table", "cathub"):
         target_def_name = str(_cfg_get(cfg, "data.target_definition") or "")
         required_ads = str(_cfg_get(cfg, "target.required_adsorbate") or "CO")
         raw_df = validate_target_definition(

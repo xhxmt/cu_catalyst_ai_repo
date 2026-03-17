@@ -1,0 +1,25 @@
+source_name: cathub
+n_samples: null  # not used for cathub source; kept for interface symmetry
+
+# --- API settings ---
+api_url: https://api.catalysis-hub.org/graphql
+
+# Query filter parameters forwarded to the GraphQL endpoint.
+# Override individual keys on the CLI, e.g.:
+#   data.query_filter.first=50
+#   data.query_filter.surface_composition=Cu
+query_filter:
+  surface_composition: Cu
+  reactants: CO
+  first: 100
+  after: null  # pagination cursor; null = start from beginning
+
+# --- Outputs (written by fetch, consumed by clean) ---
+raw_output: data/raw/cathub/cu_cathub_raw.parquet
+cleaned_output: data/interim/cu_cathub_cleaned.parquet
+processed_output: data/processed/cathub_model_table.parquet
+review_output: data/interim/cu_cathub_review.parquet
+
+# --- Target definition ---
+# Must match a registered target in configs/target/.
+target_definition: co_adsorption_energy_ev_v1

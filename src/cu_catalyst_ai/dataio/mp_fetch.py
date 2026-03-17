@@ -11,6 +11,14 @@ table
     ``column_mapping`` dict, fills missing metadata via ``defaults``, injects a
     ``target_definition`` column, and writes the standardised output.
 
+cathub
+    Fetches reaction data from the Catalysis-Hub GraphQL API.  Results are
+    standardised to the project raw-table schema and written to disk before
+    entering the cleaning pipeline.  Structural features
+    (``coordination_number``, ``avg_neighbor_distance``) are derived from
+    structure data when available.  ``d_band_center`` and ``surface_energy``
+    are left as NaN — they are never faked.
+
 mp
     Materials Project API — intentionally left as :class:`NotImplementedError`.
     Implement ``_fetch_from_mp()`` in a project-specific extension when needed.
@@ -142,21 +150,24 @@ def fetch_data(
     defaults: dict[str, str] | None = None,
     target_definition: str | None = None,
     raw_output: str | None = None,
+    cathub_kwargs: dict | None = None,
 ) -> pd.DataFrame:
     """Unified data ingestion entry-point.
 
     Args:
-        source_name: One of ``"demo"``, ``"table"``, or ``"mp"``.
-        output_path: Primary output path (used by demo; table uses *raw_output*
-            when provided, falling back to *output_path*).
+        source_name: One of ``"demo"``, ``"table"``, ``"cathub"``, or ``"mp"``.
+        output_path: Primary output path (used by demo; other sources use
+            *raw_output* when provided, falling back to *output_path*).
         n_samples: Number of samples to generate (demo source only).
         seed: Random seed (demo source only).
         input_path: Path to the local file (table source only).
         column_mapping: Column rename mapping (table source only).
         defaults: Default values for missing metadata columns (table source only).
-        target_definition: Registered target definition name (table source only).
-        raw_output: Explicit output path for the standardised raw table
-            (table source only).  Falls back to *output_path* if not provided.
+        target_definition: Registered target definition name (table/cathub).
+        raw_output: Explicit output path for the standardised raw table.
+            Falls back to *output_path* if not provided.
+        cathub_kwargs: Keyword arguments for the cathub source.  Recognised
+            keys: ``api_url`` (str), ``query_filter`` (dict).
 
     Returns:
         The ingested/generated ``pd.DataFrame``.
@@ -186,6 +197,25 @@ def fetch_data(
             defaults=defaults,
             target_definition=target_definition,
         )
+
+    if source_name == "cathub":
+        # Lazy import to avoid hard dependency when cathub is not used.
+        from cu_catalyst_ai.dataio.cathub_fetch import (  # noqa: PLC0415
+            fetch_cathub_reactions,
+            parse_cathub_response,
+        )
+
+        kw = cathub_kwargs or {}
+        api_url: str = str(kw.get("api_url", "https://api.catalysis-hub.org/graphql"))
+        query_filter: dict = dict(kw.get("query_filter") or {})
+        target_def: str = str(target_definition or "co_adsorption_energy_ev_v1")
+
+        raw_reactions = fetch_cathub_reactions(api_url=api_url, query_filter=query_filter)
+        df = parse_cathub_response(raw_reactions, target_definition=target_def)
+        effective_output = raw_output if raw_output else output_path
+        write_table(df, effective_output)
+        logger.info("Saved cathub raw data (%d rows) to %s", len(df), effective_output)
+        return df
 
     if source_name == "mp":
         api_key = os.getenv("MP_API_KEY")

@@ -1,0 +1,17 @@
+# Minimal feature set for Catalysis-Hub API data.
+#
+# Omits d_band_center and surface_energy because those fields cannot be
+# obtained directly from the Catalysis-Hub GraphQL API.  Including them
+# would route nearly all cathub rows to the review file before training.
+#
+# electronegativity is filled as the Cu constant (1.90 eV) during fetch.
+# coordination_number and avg_neighbor_distance are derived from structure
+# data when available; rows where the API omits structure data will have NaN
+# and will be routed to review by the governance layer.
+use_columns:
+  - coordination_number
+  - avg_neighbor_distance
+  - electronegativity
+  - facet
+categorical_columns:
+  - facet

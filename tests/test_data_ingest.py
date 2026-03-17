@@ -262,3 +262,28 @@ def test_table_source_without_adsorbate_and_no_default(tmp_path: Path) -> None:
     df = pd.DataFrame(data)
     with pytest.raises(ValueError, match="Missing required columns"):
         validate_required_columns(df)
+
+
+# ---------------------------------------------------------------------------
+# Regression guards — cathub additions must not break existing paths
+# ---------------------------------------------------------------------------
+
+
+def test_demo_source_still_works_after_cathub_changes(tmp_path: Path) -> None:
+    """Demo path must remain unaffected by cathub source additions."""
+    out_path = tmp_path / "demo_regression.parquet"
+    df = fetch_data(source_name="demo", output_path=str(out_path), n_samples=20, seed=7)
+    assert len(df) == 20
+    assert out_path.exists()
+    # Core demo columns must all be present.
+    for col in ("catalyst_id", "adsorption_energy", "d_band_center", "surface_energy"):
+        assert col in df.columns, f"Missing column after cathub changes: {col}"
+
+
+def test_fetch_data_unknown_source_raises(tmp_path: Path) -> None:
+    """Unknown source_name must raise ValueError, not silently fall through."""
+    with pytest.raises(ValueError, match="Unknown data source"):
+        fetch_data(
+            source_name="nonexistent_source_xyz",
+            output_path=str(tmp_path / "out.parquet"),
+        )
