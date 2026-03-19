@@ -201,6 +201,31 @@ def test_validate_rows_flags_negative_coordination_number() -> None:
     assert len(review) == 1
 
 
+def test_validate_rows_nan_neighbor_distance_is_soft_review() -> None:
+    """NaN avg_neighbor_distance (e.g. from CatHub API with no structure data)
+    must produce soft_review, NOT hard_invalid."""
+    import numpy as np  # noqa: PLC0415
+
+    df = _df({"avg_neighbor_distance": np.nan, "coordination_number": np.nan})
+    out = validate_rows(df)
+    _, review = split_good_review(out)
+    # Row is flagged but NOT as hard_invalid.
+    assert len(review) == 1
+    assert review.loc[0, "review_stage"] == "soft_review"
+
+
+def test_validate_rows_nan_coordination_number_is_soft_review() -> None:
+    """NaN coordination_number with valid avg_neighbor_distance must not be
+    hard-rejected — it must land in soft_review."""
+    import numpy as np  # noqa: PLC0415
+
+    df = _df({"coordination_number": np.nan})
+    out = validate_rows(df)
+    _, review = split_good_review(out)
+    assert len(review) == 1
+    assert review.loc[0, "review_stage"] == "soft_review"
+
+
 def test_validate_rows_flags_non_numeric_adsorption_energy() -> None:
     df = _df({"adsorption_energy": "N/A"})
     out = validate_rows(df)
@@ -300,15 +325,14 @@ def test_validate_schema_rows_accepts_valid() -> None:
     assert len(review) == 0
 
 
-def test_validate_schema_rows_flags_wrong_element_type() -> None:
-    """A row with element='Ag' (not 'Cu') must be flagged by schema validation."""
+def test_validate_schema_rows_accepts_non_cu_element() -> None:
+    """element='Ag' must now be ACCEPTED — schema no longer restricts to 'Cu'."""
     from cu_catalyst_ai.schemas.catalyst import validate_schema_rows  # noqa: PLC0415
 
     df = _df({"element": "Ag"})
     out = validate_schema_rows(df)
     _, review = split_good_review(out)
-    assert len(review) == 1
-    assert review.loc[0, "review_stage"] == "schema_validation"
+    assert len(review) == 0, "Non-Cu element should pass schema validation after relaxation"
 
 
 def test_validate_schema_rows_flags_non_numeric_coordination() -> None:
@@ -326,7 +350,9 @@ def test_validate_schema_rows_skips_already_flagged() -> None:
     """Rows already flagged by an earlier stage must not be overwritten."""
     from cu_catalyst_ai.schemas.catalyst import validate_schema_rows  # noqa: PLC0415
 
-    df = _df({"element": "Ag"})
+    # Use invalid coordination_number type to trigger an earlier flag, then check
+    # that schema_validation does not overwrite it.
+    df = _df({"coordination_number": "not_a_float"})
     df = flag_rows(df, pd.Series([True]), reason="earlier stage", stage="provenance")
     out = validate_schema_rows(df)
     assert out.loc[0, "review_reason"] == "earlier stage"

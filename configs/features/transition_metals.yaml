@@ -1,0 +1,26 @@
+# Feature configuration for multi-metal transition-metal CatHub data.
+#
+# Uses element-level descriptors from the offline lookup table
+# (src/cu_catalyst_ai/features/element_features.py):
+#   d_band_center     — Ruban et al. 1997, J. Mol. Catal. A 115, 421
+#   work_function     — CRC Handbook 97th ed.
+#   electronegativity — Pauling scale (Allred 1961)
+#   atomic_radius_pm  — covalent radius (Alvarez 2008)
+#   d_electron_count  — ground-state electron configuration
+#
+# Structural geometry columns (coordination_number, avg_neighbor_distance)
+# are omitted because CatHub API typically does not return structure data
+# for the bulk of records (they would be NaN and excluded by the model).
+#
+# facet is kept as a categorical feature; one-hot encoded during featurize.
+
+use_columns:
+  - d_band_center
+  - work_function
+  - electronegativity
+  - atomic_radius_pm
+  - d_electron_count
+  - facet
+
+categorical_columns:
+  - facet

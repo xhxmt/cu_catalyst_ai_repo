@@ -1,13 +1,13 @@
-# 运行摘要
+# Run summary
 
-模型：`rf`
+Model: rf
 
-## 指标
+## Metrics
 
-|   mae_mean |    mae_std |   rmse_mean |   rmse_std |   r2_mean |    r2_std |   test_mae |   test_rmse |   test_r2 | model_name   |
-|-----------:|-----------:|------------:|-----------:|----------:|----------:|-----------:|------------:|----------:|:-------------|
-|  0.0955436 | 0.00712894 |    0.120781 | 0.00569388 |  0.696572 | 0.0152208 |  0.0838498 |    0.101393 |  0.777661 | rf           |
+|   mae_mean |   mae_std |   rmse_mean |   rmse_std |   r2_mean |   r2_std |   test_mae |   test_rmse |   test_r2 | model_name   |
+|-----------:|----------:|------------:|-----------:|----------:|---------:|-----------:|------------:|----------:|:-------------|
+|    1.01539 |  0.294195 |     1.31555 |   0.325986 |  -1.72086 |  2.61883 |   0.677922 |    0.789933 |  -2.83933 | rf           |
 
-## 最重要的特征
+## Top features
 
-coordination_number, d_band_center, facet_111, avg_neighbor_distance, surface_energy
+facet_111-(1x1), facet_111, facet_111-(4x4), coordination_number, d_band_center

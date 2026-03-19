@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Literal
-
 import pandas as pd
 from pydantic import BaseModel, Field, ValidationError
 
@@ -12,17 +10,26 @@ class CatalystRecord(BaseModel):
     The ``target_definition`` field records which registered target definition
     was active when this record was ingested.  It is used only in the cleaning
     governance layer and is not included in the ML feature table.
+
+    Structural geometry columns (``coordination_number``, ``avg_neighbor_distance``)
+    and DFT-derived columns (``d_band_center``, ``surface_energy``) are optional:
+    data sources that do not provide them (e.g. Catalysis-Hub API) legitimately
+    leave these as NaN/None.
+
+    ``element`` accepts any transition-metal symbol string (e.g. ``"Cu"``,
+    ``"Pt"``, ``"Pd"``).  The previous ``Literal["Cu"]`` restriction has been
+    relaxed to support multi-metal datasets.
     """
 
     catalyst_id: str
-    element: Literal["Cu"] = "Cu"
+    element: str = "Cu"  # any element symbol; not restricted to Cu
     facet: str
     adsorbate: str = Field(default="CO")
-    coordination_number: float
-    avg_neighbor_distance: float
-    electronegativity: float
-    d_band_center: float
-    surface_energy: float
+    coordination_number: float | None = None
+    avg_neighbor_distance: float | None = None
+    electronegativity: float | None = None
+    d_band_center: float | None = None
+    surface_energy: float | None = None
     adsorption_energy: float
     provenance: str
     unit_adsorption_energy: str = "eV"
@@ -59,7 +66,13 @@ def validate_schema_rows(df: pd.DataFrame) -> pd.DataFrame:
         if pd.notna(out.at[idx, REVIEW_REASON_COL]):
             continue
         try:
-            CatalystRecord(**row.to_dict())
+            # Convert NaN to None so Pydantic Optional[float] fields accept
+            # legitimately missing values (e.g. structure data from CatHub).
+            row_dict = {
+                k: (None if isinstance(v, float) and pd.isna(v) else v)
+                for k, v in row.to_dict().items()
+            }
+            CatalystRecord(**row_dict)
         except ValidationError as exc:
             first_msg = exc.errors()[0]["msg"]
             out.at[idx, REVIEW_REASON_COL] = f"schema_validation: {first_msg}"

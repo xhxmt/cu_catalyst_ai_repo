@@ -3,36 +3,41 @@
 Pulls reaction data from the Catalysis-Hub GraphQL API, handles pagination,
 and standardises the response into the project's canonical raw-table schema.
 
-Supported features (first version)
------------------------------------
+Supported features (v2 — multi-metal)
+--------------------------------------
 Direct mapping from API:
     adsorption_energy  ← reactionEnergy
     facet              ← facet
     adsorbate          ← _derive_adsorbate(reactants, products)
+    element            ← _infer_element(surfaceComposition)
     catalyst_id        ← _make_catalyst_id(pubId, id)
-    provenance         ← _build_provenance(pubId, dftCode, dftFunctional)
+    provenance         ← _build_provenance(pubId, doi, year)
     unit_adsorption_energy = "eV"  (hard-coded)
-    element            = "Cu"      (hard-coded, first-version assumption)
-    electronegativity  = 1.90      (Cu constant)
-
-Derived from structure when available:
-    coordination_number
-    avg_neighbor_distance
 
 Left as NaN (not faked):
-    d_band_center
-    surface_energy
+    electronegativity      (filled later by enrich_with_element_features)
+    d_band_center          (filled later by enrich_with_element_features)
+    surface_energy         (not available from API)
+    coordination_number    (derived from structure when present)
+    avg_neighbor_distance  (derived from structure when present)
+
+DFT functional filtering:
+    Pass dft_functional_filter="BEEF-vdW" to keep only records computed
+    with that functional, ensuring cross-metal energy comparability.
 """
 
 from __future__ import annotations
 
 import logging
 import re
+import time
 from typing import Any
 
 import numpy as np
 import pandas as pd
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 logger = logging.getLogger(__name__)
 
@@ -41,8 +46,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _DEFAULT_API_URL = "https://api.catalysis-hub.org/graphql"
-_CU_BOND_CUTOFF_ANGSTROM = 3.5  # conservative cutoff for Cu-Cu / Cu-X neighbour detection
-_CU_ELECTRONEGATIVITY = 1.90
+_BOND_CUTOFF_ANGSTROM = 3.5  # conservative bond cutoff for neighbour detection
 
 # ---------------------------------------------------------------------------
 # GraphQL query builder
@@ -54,19 +58,19 @@ query CathubReactions(
   $after: String,
   $surfaceComposition: String,
   $reactants: String
-) {{
+) {
   reactions(
     first: $first,
     after: $after,
     surfaceComposition: $surfaceComposition,
     reactants: $reactants
-  ) {{
-    pageInfo {{
+  ) {
+    pageInfo {
       hasNextPage
       endCursor
-    }}
-    edges {{
-      node {{
+    }
+    edges {
+      node {
         id
         reactionEnergy
         facet
@@ -75,10 +79,12 @@ query CathubReactions(
         pubId
         dftCode
         dftFunctional
-        doi
-        title
-        year
-        systems {{
+        publication {
+          doi
+          year
+          title
+        }
+        systems {
           id
           uniqueId
           Cifdata
@@ -86,11 +92,11 @@ query CathubReactions(
           positions
           numbers
           cell
-        }}
-      }}
-    }}
-  }}
-}}
+        }
+      }
+    }
+  }
+}
 """
 
 
@@ -110,6 +116,144 @@ def _build_graphql_variables(
 
 
 # ---------------------------------------------------------------------------
+# Element inference
+# ---------------------------------------------------------------------------
+
+# Two-letter element symbols that could be confused with one-letter ones.
+_TWO_LETTER_ELEMENTS = {
+    "Fe",
+    "Co",
+    "Ni",
+    "Cu",
+    "Zn",
+    "Ga",
+    "Ge",
+    "As",
+    "Se",
+    "Br",
+    "Kr",
+    "Rb",
+    "Sr",
+    "Zr",
+    "Nb",
+    "Mo",
+    "Tc",
+    "Ru",
+    "Rh",
+    "Pd",
+    "Ag",
+    "Cd",
+    "In",
+    "Sn",
+    "Sb",
+    "Te",
+    "Xe",
+    "Cs",
+    "Ba",
+    "La",
+    "Ce",
+    "Pr",
+    "Nd",
+    "Pm",
+    "Sm",
+    "Eu",
+    "Gd",
+    "Tb",
+    "Dy",
+    "Ho",
+    "Er",
+    "Tm",
+    "Yb",
+    "Lu",
+    "Hf",
+    "Ta",
+    "Re",
+    "Os",
+    "Ir",
+    "Pt",
+    "Au",
+    "Hg",
+    "Tl",
+    "Pb",
+    "Bi",
+    "Po",
+    "At",
+    "Rn",
+    "Fr",
+    "Ra",
+}
+
+
+def _infer_element(surface_composition: str | None) -> str:
+    """Extract the primary metal element from a *surface_composition* string.
+
+    The Catalysis-Hub API returns ``surfaceComposition`` as a chemical
+    formula string such as ``"Cu"``, ``"Pt"``, ``"Pd3Fe"`` (alloy), or
+    ``"Cu(111)"`` (with Miller index).  This function returns the first
+    capitalised element symbol it finds.
+
+    For pure metals this is unambiguous.  For alloys the first element is
+    taken as the host metal (majority component) as a best-effort heuristic.
+    Falls back to ``"unknown"`` on parse failure.
+
+    Args:
+        surface_composition: Raw ``surfaceComposition`` field from the API.
+
+    Returns:
+        Element symbol string, e.g. ``"Cu"``, ``"Pt"``.
+    """
+    if not surface_composition:
+        return "unknown"
+    # Find first occurrence of an uppercase letter followed by optional
+    # lowercase letter — this matches standard element symbol patterns.
+    m = re.search(r"([A-Z][a-z]?)", str(surface_composition))
+    if not m:
+        return "unknown"
+    candidate = m.group(1)
+    # If the two-letter version exists, prefer it over the one-letter prefix.
+    if len(candidate) == 1:
+        two = surface_composition[m.start() : m.start() + 2]
+        if len(two) == 2 and two[1].islower() and two in _TWO_LETTER_ELEMENTS:
+            candidate = two
+    return candidate
+
+
+# ---------------------------------------------------------------------------
+# HTTP session with retry
+# ---------------------------------------------------------------------------
+
+_RETRY_TOTAL = 3
+_RETRY_BACKOFF_FACTOR = 2  # waits 2s, 4s, 8s between attempts
+_RETRY_STATUS_FORCELIST = (429, 500, 502, 503, 504)
+
+
+def _make_session() -> requests.Session:
+    """Return a :class:`requests.Session` configured with exponential backoff.
+
+    Retries up to :data:`_RETRY_TOTAL` times on transient HTTP errors
+    (codes in :data:`_RETRY_STATUS_FORCELIST`) with a backoff factor of
+    :data:`_RETRY_BACKOFF_FACTOR` seconds.
+    """
+    session = requests.Session()
+    retry = Retry(
+        total=_RETRY_TOTAL,
+        backoff_factor=_RETRY_BACKOFF_FACTOR,
+        status_forcelist=_RETRY_STATUS_FORCELIST,
+        allowed_methods=["POST"],
+        # NOTE: do NOT set raise_on_status=False here.
+        # When raise_on_status=False, urllib3 skips the status_forcelist check
+        # and returns the bad response directly, so no retry ever happens.
+        # Leaving it at the default (True) means urllib3 retries on any code
+        # in status_forcelist and only raises MaxRetryError after all attempts
+        # are exhausted — which requests then converts to an HTTPError.
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    return session
+
+
+# ---------------------------------------------------------------------------
 # Pagination / HTTP
 # ---------------------------------------------------------------------------
 
@@ -117,6 +261,8 @@ def _build_graphql_variables(
 def fetch_cathub_reactions(
     api_url: str = _DEFAULT_API_URL,
     query_filter: dict[str, Any] | None = None,
+    dft_functional_filter: str | None = None,
+    page_delay: float = 2.0,
 ) -> list[dict[str, Any]]:
     """Fetch all matching reactions from the Catalysis-Hub GraphQL API.
 
@@ -127,6 +273,12 @@ def fetch_cathub_reactions(
         api_url: GraphQL endpoint URL.
         query_filter: Optional dict with keys ``surface_composition``,
             ``reactants``, ``first`` (page size), and ``after`` (start cursor).
+        dft_functional_filter: If set, only reactions where ``dftFunctional``
+            exactly matches this string are returned.  E.g. ``"BEEF-vdW"``.
+            ``None`` disables filtering.
+        page_delay: Seconds to wait **between** consecutive page requests.
+            Helps prevent 503 / rate-limit errors on the CatHub API.
+            Set to 0 to disable.  Default is 2 seconds.
 
     Returns:
         List of raw reaction dicts as returned by the API (one per edge node).
@@ -145,14 +297,22 @@ def fetch_cathub_reactions(
 
     all_reactions: list[dict[str, Any]] = []
     page = 0
+    session = _make_session()
 
     while True:
         page += 1
+
+        # Polite inter-page delay: skip on the first request, apply from page 2
+        # onward so we don't hammer the API and trigger rate-limiting / 503s.
+        if page > 1 and page_delay > 0:
+            logger.debug("Sleeping %.1fs before page %d (page_delay)", page_delay, page)
+            time.sleep(page_delay)
+
         variables = _build_graphql_variables(first, after, surface_composition, reactants)
         payload = {"query": _REACTION_QUERY_TEMPLATE, "variables": variables}
 
         logger.info("Fetching page %d from %s (first=%d, after=%s)", page, api_url, first, after)
-        response = requests.post(api_url, json=payload, timeout=60)
+        response = session.post(api_url, json=payload, timeout=60)
         response.raise_for_status()
 
         data = response.json()
@@ -167,6 +327,25 @@ def fetch_cathub_reactions(
             raise ValueError(f"Unexpected API response structure on page {page}: {exc}") from exc
 
         nodes = [edge["node"] for edge in edges if edge.get("node")]
+
+        # Apply DFT functional filter before accumulating.
+        if dft_functional_filter is not None:
+            before = len(nodes)
+            nodes = [
+                n
+                for n in nodes
+                if str(n.get("dftFunctional") or "").strip() == dft_functional_filter
+            ]
+            filtered = before - len(nodes)
+            if filtered:
+                logger.debug(
+                    "Page %d: dropped %d/%d nodes (dftFunctional != %r)",
+                    page,
+                    filtered,
+                    before,
+                    dft_functional_filter,
+                )
+
         all_reactions.extend(nodes)
         logger.info(
             "Page %d: fetched %d reactions (total so far: %d)",
@@ -305,7 +484,7 @@ def _compute_structural_features(
     """Compute coordination number and avg neighbour distance from structure data.
 
     Uses a simple distance-cutoff approach (no ASE dependency) with a
-    conservative Cu cutoff of 3.5 Å.  Only the first system in the list is
+    conservative 3.5 Å cutoff.  Only the first system in the list is
     used (typically the slab+adsorbate system).
 
     Args:
@@ -337,7 +516,7 @@ def _compute_structural_features(
         np.fill_diagonal(dists, np.inf)
 
         # Neighbours within cutoff.
-        neighbour_mask = dists < _CU_BOND_CUTOFF_ANGSTROM
+        neighbour_mask = dists < _BOND_CUTOFF_ANGSTROM
 
         coord_nums = neighbour_mask.sum(axis=1).astype(float)  # per atom
         # Only consider atoms that have at least one neighbour.
@@ -409,22 +588,24 @@ def parse_cathub_response(
         coord_num, avg_dist = _compute_structural_features(rxn.get("systems"))
 
         adsorbate = _derive_adsorbate(rxn.get("reactants"), rxn.get("products"))
+        element = _infer_element(rxn.get("surfaceComposition"))
 
+        pub = rxn.get("publication") or {}
         row: dict[str, Any] = {
             "catalyst_id": _make_catalyst_id(rxn.get("pubId"), rxn.get("id")),
-            "element": "Cu",
+            "element": element,
             "facet": str(rxn.get("facet") or ""),
             "adsorbate": adsorbate,
             "coordination_number": coord_num,
             "avg_neighbor_distance": avg_dist,
-            "electronegativity": _CU_ELECTRONEGATIVITY,
-            "d_band_center": float("nan"),  # not available from API
+            "electronegativity": float("nan"),  # filled later by enrich_with_element_features
+            "d_band_center": float("nan"),  # filled later by enrich_with_element_features
             "surface_energy": float("nan"),  # not available from API
             "adsorption_energy": rxn.get("reactionEnergy"),
             "provenance": _build_provenance(
                 rxn.get("pubId"),
-                rxn.get("doi"),
-                rxn.get("year"),
+                pub.get("doi"),
+                pub.get("year"),
             ),
             "unit_adsorption_energy": "eV",
             "target_definition": target_definition,

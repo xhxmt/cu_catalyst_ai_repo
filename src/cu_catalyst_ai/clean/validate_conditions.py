@@ -64,13 +64,23 @@ def validate_rows(
     surface_energy_min: float = 0.0,
     electronegativity_min: float = 0.0,
     electronegativity_max: float = 4.0,
+    skip_structural_nan: bool = False,
 ) -> pd.DataFrame:
     """Flag rows with hard-invalid or out-of-bounds values.
 
     Hard-invalid checks (structural impossibilities):
-    - ``avg_neighbor_distance`` ≤ 0
-    - ``coordination_number`` < 0
+    - ``avg_neighbor_distance`` ≤ 0 (and not NaN)
+    - ``coordination_number`` < 0 (and not NaN)
     - ``adsorption_energy`` cannot be cast to float
+
+    NaN handling for structural geometry columns
+    (``avg_neighbor_distance``, ``coordination_number``):
+    - When *skip_structural_nan* is ``False`` (default): NaN rows are flagged
+      as ``soft_review`` with reason "is missing (no structure data)".
+    - When *skip_structural_nan* is ``True``: NaN rows are silently passed
+      through.  Use this for data sources (e.g. Catalysis-Hub) where structure
+      data is entirely optional and the downstream feature config does not
+      require these columns.
 
     Soft review-bound checks (physically suspect, requires human review):
     - ``|adsorption_energy|`` > *adsorption_energy_abs_max* (default 10 eV)
@@ -88,6 +98,9 @@ def validate_rows(
         surface_energy_min: Minimum allowed surface energy (exclusive).
         electronegativity_min: Minimum allowed electronegativity (exclusive).
         electronegativity_max: Maximum allowed electronegativity (inclusive).
+        skip_structural_nan: When ``True``, NaN values in
+            ``avg_neighbor_distance`` and ``coordination_number`` are not
+            flagged.  Defaults to ``False``.
 
     Returns:
         DataFrame with ``review_reason`` and ``review_stage`` columns added
@@ -96,20 +109,41 @@ def validate_rows(
     out = df.copy()
 
     # ------------------------------------------------------------------
-    # Hard-invalid: avg_neighbor_distance <= 0
+    # Hard-invalid: avg_neighbor_distance <= 0 (non-positive and present)
+    # NaN is legitimate for sources that do not provide structure data
+    # (e.g. Catalysis-Hub API) — downgrade to soft_review, not hard_invalid.
+    # When skip_structural_nan=True, NaN rows are silently passed through.
     # ------------------------------------------------------------------
     if "avg_neighbor_distance" in out.columns:
         numeric_and = pd.to_numeric(out["avg_neighbor_distance"], errors="coerce")
-        bad_and = numeric_and.le(0) | numeric_and.isna()
+        bad_and = numeric_and.le(0) & numeric_and.notna()
         out = flag_rows(out, bad_and, reason="avg_neighbor_distance <= 0", stage="hard_invalid")
+        if not skip_structural_nan:
+            nan_and = numeric_and.isna()
+            out = flag_rows(
+                out,
+                nan_and,
+                reason="avg_neighbor_distance is missing (no structure data)",
+                stage="soft_review",
+            )
 
     # ------------------------------------------------------------------
-    # Hard-invalid: coordination_number < 0
+    # Hard-invalid: coordination_number < 0 (negative and present)
+    # NaN is legitimate for sources without structure data — soft_review
+    # (or skipped entirely when skip_structural_nan=True).
     # ------------------------------------------------------------------
     if "coordination_number" in out.columns:
         numeric_cn = pd.to_numeric(out["coordination_number"], errors="coerce")
-        bad_cn = numeric_cn.lt(0) | numeric_cn.isna()
+        bad_cn = numeric_cn.lt(0) & numeric_cn.notna()
         out = flag_rows(out, bad_cn, reason="coordination_number < 0", stage="hard_invalid")
+        if not skip_structural_nan:
+            nan_cn = numeric_cn.isna()
+            out = flag_rows(
+                out,
+                nan_cn,
+                reason="coordination_number is missing (no structure data)",
+                stage="soft_review",
+            )
 
     # ------------------------------------------------------------------
     # Hard-invalid: adsorption_energy non-numeric

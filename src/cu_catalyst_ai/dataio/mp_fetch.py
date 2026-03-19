@@ -209,12 +209,73 @@ def fetch_data(
         api_url: str = str(kw.get("api_url", "https://api.catalysis-hub.org/graphql"))
         query_filter: dict = dict(kw.get("query_filter") or {})
         target_def: str = str(target_definition or "co_adsorption_energy_ev_v1")
+        dft_functional_filter: str | None = kw.get("dft_functional_filter") or None
+        page_delay: float = float(kw.get("page_delay", 2.0))
 
-        raw_reactions = fetch_cathub_reactions(api_url=api_url, query_filter=query_filter)
-        df = parse_cathub_response(raw_reactions, target_definition=target_def)
+        # Support multi-element fetching: iterate over each element separately
+        # so that the API surface_composition filter works correctly.
+        target_elements: list[str] = list(kw.get("target_elements") or [])
+        if not target_elements:
+            # Fallback: single fetch using surface_composition from query_filter.
+            target_elements = [str(query_filter.get("surface_composition", "Cu"))]
+
+        import requests as _requests  # noqa: PLC0415
+
+        all_frames: list[pd.DataFrame] = []
+        failed_elements: list[str] = []
+        for element in target_elements:
+            elem_filter = dict(query_filter)
+            elem_filter["surface_composition"] = element
+            logger.info("Fetching CatHub data for element: %s", element)
+            try:
+                raw = fetch_cathub_reactions(
+                    api_url=api_url,
+                    query_filter=elem_filter,
+                    dft_functional_filter=dft_functional_filter,
+                    page_delay=page_delay,
+                )
+            except _requests.exceptions.HTTPError as exc:
+                logger.warning(
+                    "HTTP error fetching element %s (skipping): %s", element, exc
+                )
+                failed_elements.append(element)
+                continue
+            except _requests.exceptions.ConnectionError as exc:
+                logger.warning(
+                    "Connection error fetching element %s (skipping): %s", element, exc
+                )
+                failed_elements.append(element)
+                continue
+            if raw:
+                all_frames.append(parse_cathub_response(raw, target_definition=target_def))
+            else:
+                logger.warning("No reactions returned for element: %s", element)
+
+        if failed_elements:
+            logger.warning(
+                "CatHub fetch failed for %d/%d elements (skipped): %s",
+                len(failed_elements),
+                len(target_elements),
+                failed_elements,
+            )
+
+        if all_frames:
+            df = pd.concat(all_frames, ignore_index=True)
+        else:
+            # No data at all — return empty frame with canonical columns.
+            from cu_catalyst_ai.dataio.cathub_fetch import _CANONICAL_COLUMNS  # noqa: PLC0415
+
+            df = pd.DataFrame(columns=_CANONICAL_COLUMNS)
+            logger.warning("CatHub fetch returned no data for any element in: %s", target_elements)
+
         effective_output = raw_output if raw_output else output_path
         write_table(df, effective_output)
-        logger.info("Saved cathub raw data (%d rows) to %s", len(df), effective_output)
+        logger.info(
+            "Saved cathub raw data (%d rows, %d elements) to %s",
+            len(df),
+            df["element"].nunique() if not df.empty else 0,
+            effective_output,
+        )
         return df
 
     if source_name == "mp":

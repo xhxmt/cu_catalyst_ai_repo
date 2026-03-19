@@ -4,15 +4,36 @@ n_samples: null  # not used for cathub source; kept for interface symmetry
 # --- API settings ---
 api_url: https://api.catalysis-hub.org/graphql
 
+# Elements to fetch.  Each element is queried separately and the results
+# are concatenated.  Remove elements you do not need to reduce fetch time.
+target_elements:
+  - Fe
+  - Co
+  - Ni
+  - Cu
+  - Ru
+  - Rh
+  - Pd
+  - Ag
+  - Ir
+  - Pt
+  - Au
+
+# DFT functional filter.  Only reactions computed with this functional are
+# kept.  Set to null to disable filtering (keeps all functionals).
+# BEEF-vdW is the most common functional in CatHub for adsorption energies.
+dft_functional_filter: BEEF-vdW
+
 # Query filter parameters forwarded to the GraphQL endpoint.
-# Override individual keys on the CLI, e.g.:
-#   data.query_filter.first=50
-#   data.query_filter.surface_composition=Cu
+# surface_composition is set per-element by the fetch loop; override only
+# reactants and first (page size) here.
 query_filter:
-  surface_composition: Cu
   reactants: CO
-  first: 100
-  after: null  # pagination cursor; null = start from beginning
+  first: 10
+# Delay (seconds) between consecutive pagination requests.
+# Prevents 503 / rate-limit errors when fetching many pages.
+# Each page fetches 'first' reactions; set to 0 to disable throttling.
+page_delay: 2.0
 
 # --- Outputs (written by fetch, consumed by clean) ---
 raw_output: data/raw/cathub/cu_cathub_raw.parquet

@@ -5,11 +5,13 @@ All tests use mock HTTP responses — no network calls are made.
 
 from __future__ import annotations
 
+import itertools
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
+import requests
 
 from cu_catalyst_ai.dataio.cathub_fetch import (
     _build_provenance,
@@ -36,6 +38,7 @@ def _mock_reaction(
     doi: str = "10.1234/test",
     year: int = 2024,
     systems: list[dict] | None = None,
+    surface_composition: str = "Cu",
 ) -> dict[str, Any]:
     """Build a minimal mock reaction dict matching the API structure."""
     return {
@@ -51,6 +54,8 @@ def _mock_reaction(
         "dftCode": "VASP",
         "dftFunctional": "PBE",
         "systems": systems or [],
+        "surfaceComposition": surface_composition,  # required by _infer_element
+        "publication": {"doi": doi, "year": year},
     }
 
 
@@ -82,6 +87,29 @@ def _minimal_structure_positions() -> list[list[float]]:
         [1.275, 0.74, 2.08],
         [0.0, 0.0, 2.08],
     ]
+
+
+def _make_mock_response(page_data: dict) -> MagicMock:
+    """Build a mock requests.Response that returns *page_data* as JSON."""
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.json.return_value = page_data
+    return mock_resp
+
+
+def _make_mock_session(*responses: MagicMock) -> MagicMock:
+    """Return a mock Session whose .post() returns *responses* in order.
+
+    NOTE: The production code calls ``_make_session()`` internally and then
+    calls ``session.post()``.  We therefore patch ``_make_session`` (not
+    ``requests.post``) so the mock is exercised through the real code path.
+    """
+    mock_session = MagicMock()
+    if len(responses) == 1:
+        mock_session.post.return_value = responses[0]
+    else:
+        mock_session.post.side_effect = list(responses)
+    return mock_session
 
 
 # ---------------------------------------------------------------------------
@@ -255,8 +283,9 @@ def test_parse_cathub_response_basic_mapping() -> None:
     assert df.loc[0, "adsorption_energy"] == pytest.approx(-0.65)
     assert df.loc[0, "facet"] == "111"
     assert df.loc[0, "unit_adsorption_energy"] == "eV"
-    assert df.loc[0, "element"] == "Cu"
-    assert df.loc[0, "electronegativity"] == pytest.approx(1.90)
+    assert df.loc[0, "element"] == "Cu"  # inferred from surfaceComposition="Cu"
+    # electronegativity is NaN at fetch time; filled later by enrich_with_element_features
+    assert pd.isna(df.loc[0, "electronegativity"])
     assert df.loc[0, "target_definition"] == "co_adsorption_energy_ev_v1"
 
 
@@ -323,28 +352,24 @@ def test_parse_cathub_response_custom_target_definition() -> None:
 
 
 # ---------------------------------------------------------------------------
-# fetch_cathub_reactions (mocked HTTP)
+# fetch_cathub_reactions (mocked HTTP via _make_session)
 # ---------------------------------------------------------------------------
-
-
-def _make_mock_response(page_data: dict) -> MagicMock:
-    mock_resp = MagicMock()
-    mock_resp.raise_for_status = MagicMock()
-    mock_resp.json.return_value = page_data
-    return mock_resp
+# NOTE: The production code calls _make_session() and then session.post().
+# Patching requests.post directly does NOT intercept session.post() calls.
+# We therefore patch _make_session to return a controlled mock session.
 
 
 def test_fetch_cathub_reactions_single_page() -> None:
     """Single page → all reactions returned, no second request."""
     reactions = [_mock_reaction(reaction_id=f"r{i}") for i in range(3)]
     page = _mock_graphql_page(reactions, has_next_page=False)
+    mock_session = _make_mock_session(_make_mock_response(page))
 
-    with patch("cu_catalyst_ai.dataio.cathub_fetch.requests.post") as mock_post:
-        mock_post.return_value = _make_mock_response(page)
+    with patch("cu_catalyst_ai.dataio.cathub_fetch._make_session", return_value=mock_session):
         result = fetch_cathub_reactions(query_filter={"first": 10})
 
     assert len(result) == 3
-    assert mock_post.call_count == 1
+    assert mock_session.post.call_count == 1
 
 
 def test_fetch_cathub_reactions_pagination() -> None:
@@ -354,24 +379,24 @@ def test_fetch_cathub_reactions_pagination() -> None:
 
     page1 = _mock_graphql_page(page1_reactions, has_next_page=True, end_cursor="cursor_abc")
     page2 = _mock_graphql_page(page2_reactions, has_next_page=False)
+    mock_session = _make_mock_session(
+        _make_mock_response(page1),
+        _make_mock_response(page2),
+    )
 
-    with patch("cu_catalyst_ai.dataio.cathub_fetch.requests.post") as mock_post:
-        mock_post.side_effect = [
-            _make_mock_response(page1),
-            _make_mock_response(page2),
-        ]
+    with patch("cu_catalyst_ai.dataio.cathub_fetch._make_session", return_value=mock_session):
         result = fetch_cathub_reactions(query_filter={"first": 3})
 
     assert len(result) == 5
-    assert mock_post.call_count == 2
+    assert mock_session.post.call_count == 2
 
 
 def test_fetch_cathub_reactions_empty_result() -> None:
     """Empty edges → empty list, no crash."""
     page = _mock_graphql_page([], has_next_page=False)
+    mock_session = _make_mock_session(_make_mock_response(page))
 
-    with patch("cu_catalyst_ai.dataio.cathub_fetch.requests.post") as mock_post:
-        mock_post.return_value = _make_mock_response(page)
+    with patch("cu_catalyst_ai.dataio.cathub_fetch._make_session", return_value=mock_session):
         result = fetch_cathub_reactions()
 
     assert result == []
@@ -380,9 +405,9 @@ def test_fetch_cathub_reactions_empty_result() -> None:
 def test_fetch_cathub_reactions_malformed_response_raises() -> None:
     """Malformed API response (missing 'data' key) → ValueError."""
     bad_response = {"errors": [{"message": "Something went wrong"}]}
+    mock_session = _make_mock_session(_make_mock_response(bad_response))
 
-    with patch("cu_catalyst_ai.dataio.cathub_fetch.requests.post") as mock_post:
-        mock_post.return_value = _make_mock_response(bad_response)
+    with patch("cu_catalyst_ai.dataio.cathub_fetch._make_session", return_value=mock_session):
         with pytest.raises(ValueError, match="Unexpected API response structure"):
             fetch_cathub_reactions()
 
@@ -390,17 +415,91 @@ def test_fetch_cathub_reactions_malformed_response_raises() -> None:
 def test_fetch_cathub_reactions_passes_query_filter() -> None:
     """Query filter parameters are forwarded to the HTTP POST call."""
     page = _mock_graphql_page([], has_next_page=False)
+    mock_session = _make_mock_session(_make_mock_response(page))
 
-    with patch("cu_catalyst_ai.dataio.cathub_fetch.requests.post") as mock_post:
-        mock_post.return_value = _make_mock_response(page)
+    with patch("cu_catalyst_ai.dataio.cathub_fetch._make_session", return_value=mock_session):
         fetch_cathub_reactions(
             api_url="https://custom.api/graphql",
             query_filter={"surface_composition": "Pt", "reactants": "O", "first": 5},
         )
 
-    call_kwargs = mock_post.call_args
+    call_kwargs = mock_session.post.call_args
     assert call_kwargs[0][0] == "https://custom.api/graphql"
     variables = call_kwargs[1]["json"]["variables"]
     assert variables["surfaceComposition"] == "Pt"
     assert variables["reactants"] == "O"
     assert variables["first"] == 5
+
+
+def test_fetch_cathub_reactions_503_raises_http_error() -> None:
+    """A 503 response after all retries → HTTPError propagates to the caller.
+
+    Regression test: previously raise_on_status=False on the Retry object
+    silently disabled status_forcelist, so the 503 was returned instead of
+    retried, and raise_for_status() raised immediately without any retry.
+    Now urllib3 retries up to _RETRY_TOTAL times, then raises MaxRetryError
+    (wrapped as ConnectionError) or HTTPError on exhaustion.
+    We simulate the exhausted-retries end-state directly.
+    """
+    mock_session = MagicMock()
+    mock_session.post.side_effect = requests.exceptions.HTTPError(
+        "503 Server Error: Service Unavailable"
+    )
+
+    with patch("cu_catalyst_ai.dataio.cathub_fetch._make_session", return_value=mock_session):
+        with pytest.raises(requests.exceptions.HTTPError):
+            fetch_cathub_reactions()
+
+
+# ---------------------------------------------------------------------------
+# Multi-element graceful degradation (mp_fetch integration)
+# ---------------------------------------------------------------------------
+
+
+def test_fetch_data_cathub_graceful_degradation_on_503(tmp_path: pytest.TempPathFactory) -> None:
+    """503 on one element logs a warning and skips it; other elements succeed.
+
+    Regression: previously HTTPError from one element crashed the entire
+    multi-element loop in fetch_data('cathub', ...).
+    """
+    from cu_catalyst_ai.dataio.mp_fetch import fetch_data
+
+    ok_page = _mock_graphql_page(
+        [_mock_reaction(reaction_id="r1", surface_composition="Cu")],
+        has_next_page=False,
+    )
+
+    # Each call to _make_session() returns a fresh mock.
+    # Element "Fe" → session raises 503; Element "Cu" → session returns ok_page.
+    call_counter = itertools.count()
+
+    def _session_factory() -> MagicMock:
+        idx = next(call_counter)
+        mock_session = MagicMock()
+        if idx == 0:
+            # Fe → 503
+            mock_session.post.side_effect = requests.exceptions.HTTPError(
+                "503 Server Error: Service Unavailable"
+            )
+        else:
+            # Cu → success
+            mock_session.post.return_value = _make_mock_response(ok_page)
+        return mock_session
+
+    out = tmp_path / "out.parquet"
+    with patch(
+        "cu_catalyst_ai.dataio.cathub_fetch._make_session",
+        side_effect=_session_factory,
+    ):
+        df = fetch_data(
+            source_name="cathub",
+            output_path=str(out),
+            cathub_kwargs={
+                "target_elements": ["Fe", "Cu"],
+                "query_filter": {"reactants": "CO", "first": 10},
+            },
+        )
+
+    # Fe failed → only Cu rows present; pipeline did NOT crash.
+    assert len(df) >= 1
+    assert "Cu" in df["element"].values

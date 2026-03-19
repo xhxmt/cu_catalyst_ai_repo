@@ -87,6 +87,17 @@ def _run_fetch(cfg: DictConfig) -> None:
             if query_filter_raw is not None
             else {}
         )
+
+        # Multi-element support: read target_elements list from cfg.
+        target_elements_raw = _cfg_get(cfg, "data.target_elements")
+        target_elements: list[str] = (
+            list(OmegaConf.to_container(target_elements_raw, resolve=True))  # type: ignore[arg-type]
+            if target_elements_raw is not None
+            else []
+        )
+
+        dft_functional_filter = _cfg_get(cfg, "data.dft_functional_filter") or None
+
         fetch_data(
             source_name="cathub",
             output_path=str(
@@ -101,6 +112,8 @@ def _run_fetch(cfg: DictConfig) -> None:
                     _cfg_get(cfg, "data.api_url") or "https://api.catalysis-hub.org/graphql"
                 ),
                 "query_filter": query_filter,
+                "target_elements": target_elements,
+                "dft_functional_filter": dft_functional_filter,
             },
         )
     else:
@@ -160,6 +173,10 @@ def _run_clean(cfg: DictConfig) -> None:
             electronegativity_max=float(
                 _cfg_get(cfg, "target.review_bounds.electronegativity_max") or 4.0
             ),
+            # Catalysis-Hub API does not return structure data; NaN in
+            # avg_neighbor_distance / coordination_number is expected and
+            # should not isolate rows.
+            skip_structural_nan=(source == "cathub"),
         )
         # --- Layer 4: Pydantic schema validation (flags, does not raise) ----
         raw_df = validate_schema_rows(raw_df)
@@ -189,8 +206,15 @@ def _run_clean(cfg: DictConfig) -> None:
 
 
 def _run_featurize(cfg: DictConfig) -> None:
+    from cu_catalyst_ai.features.element_features import (
+        enrich_with_element_features,  # noqa: PLC0415
+    )
+
     clean_df = read_table(cfg.data.cleaned_output)
     enriched_df = add_structural_ratios(clean_df)
+    # Inject element-level descriptors (d_band_center, work_function, etc.)
+    # from the offline lookup table before building the ML feature table.
+    enriched_df = enrich_with_element_features(enriched_df)
     feature_df = build_feature_table(
         enriched_df,
         use_columns=list(cfg.features.use_columns) + ["coordination_to_distance"],
