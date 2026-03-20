@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -23,9 +23,11 @@ def main() -> int:
     log_path = repo_root / "e2e_demo" / "skill-activation.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
-    ts = datetime.now(timezone.utc).isoformat()
+    ts = datetime.now(UTC).isoformat()
     line = f"{ts}\tskill={args.skill}\trun_id={args.run_id}\n"
-    log_path.write_text((log_path.read_text() if log_path.exists() else "") + line, encoding="utf-8")
+    log_path.write_text(
+        (log_path.read_text() if log_path.exists() else "") + line, encoding="utf-8"
+    )
 
     return 0
 

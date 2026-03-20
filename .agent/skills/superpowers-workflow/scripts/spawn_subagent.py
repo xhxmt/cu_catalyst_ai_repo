@@ -8,7 +8,6 @@ with isolated context and specific skill instructions.
 import argparse
 import json
 import subprocess
-import sys
 import time
 import uuid
 from pathlib import Path
@@ -224,19 +223,21 @@ def main() -> int:
         return 0 if result["success"] else 1
 
     # Text output
-    print(f"\n{'✅' if result['success'] else '❌'} Subagent completed in {result['duration_s']:.1f}s")
+    print(
+        f"\n{'✅' if result['success'] else '❌'} Subagent completed in {result['duration_s']:.1f}s"
+    )
     print(f"📝 Full log: {result['log_file']}")
 
     if result["success"]:
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print("RESULT:")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         print(result["output"])
         return 0
     else:
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print("ERROR:")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         print(result["error"])
         return 1
 
