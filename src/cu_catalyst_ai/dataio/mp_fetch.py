@@ -235,15 +235,11 @@ def fetch_data(
                     page_delay=page_delay,
                 )
             except _requests.exceptions.HTTPError as exc:
-                logger.warning(
-                    "HTTP error fetching element %s (skipping): %s", element, exc
-                )
+                logger.warning("HTTP error fetching element %s (skipping): %s", element, exc)
                 failed_elements.append(element)
                 continue
             except _requests.exceptions.ConnectionError as exc:
-                logger.warning(
-                    "Connection error fetching element %s (skipping): %s", element, exc
-                )
+                logger.warning("Connection error fetching element %s (skipping): %s", element, exc)
                 failed_elements.append(element)
                 continue
             if raw:
