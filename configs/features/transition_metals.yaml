@@ -13,14 +13,18 @@
 # for the bulk of records (they would be NaN and excluded by the model).
 #
 # facet is kept as a categorical feature; one-hot encoded during featurize.
+# dft_functional records the DFT functional used (e.g. PBE, BEEF-vdW);
+# one-hot encoding lets the model learn systematic energy offsets between
+# different functionals, reducing target noise across mixed-functional data.
 
 use_columns:
   - d_band_center
   - work_function
-  - electronegativity
   - atomic_radius_pm
   - d_electron_count
   - facet
+  - dft_functional
 
 categorical_columns:
   - facet
+  - dft_functional

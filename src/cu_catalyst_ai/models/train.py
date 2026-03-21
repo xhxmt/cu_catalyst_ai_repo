@@ -2,12 +2,33 @@ from __future__ import annotations
 
 import joblib
 import pandas as pd
+from sklearn.pipeline import Pipeline
 
 from cu_catalyst_ai.features.feature_selection import get_feature_columns
 from cu_catalyst_ai.models.cv import run_cv
 from cu_catalyst_ai.models.metrics import regression_metrics
 from cu_catalyst_ai.models.registry import build_model
 from cu_catalyst_ai.utils.io import ensure_parent
+
+
+def _supports_sample_weight(model: object) -> bool:
+    """Return True when *model* accepts ``sample_weight`` in ``.fit()``.
+
+    Pipeline-wrapped GPR does not forward ``sample_weight`` by default;
+    attempting to pass it raises a TypeError.  Tree models (RF, XGBoost)
+    accept it directly.
+    """
+    if isinstance(model, Pipeline):
+        # Only the final estimator receives fit kwargs; check its signature.
+        import inspect  # noqa: PLC0415
+
+        final = model.steps[-1][1]
+        sig = inspect.signature(final.fit)
+        return "sample_weight" in sig.parameters
+    import inspect  # noqa: PLC0415
+
+    sig = inspect.signature(model.fit)
+    return "sample_weight" in sig.parameters
 
 
 def train_model(
@@ -37,7 +58,20 @@ def train_model(
         model, X_train, y_train, n_splits=n_splits, shuffle=shuffle, random_state=cv_random_state
     )
 
-    model.fit(X_train, y_train)
+    # --- Inverse-frequency sample weights (balances Cu-dominant distribution) ---
+    # w_i = N / (K * count_i), where N = total train samples, K = number of elements.
+    # Each element's total weight contribution equals N/K — they all matter equally.
+    # Falls back to unweighted fit when 'element' metadata column is absent.
+    if "element" in train_df.columns and _supports_sample_weight(model):
+        element_counts = train_df["element"].value_counts()
+        n_total = len(train_df)
+        n_elements = len(element_counts)
+        sample_weight = (
+            train_df["element"].map(lambda x: n_total / (n_elements * element_counts[x])).values
+        )
+        model.fit(X_train, y_train, sample_weight=sample_weight)
+    else:
+        model.fit(X_train, y_train)
     preds = model.predict(X_test)
     test_metrics = regression_metrics(y_test, preds)
 

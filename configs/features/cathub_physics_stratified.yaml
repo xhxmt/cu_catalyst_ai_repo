@@ -1,0 +1,13 @@
+# Experiment F: extended physics features + DFT functional one-hot on all 375 rows.
+# Adds d_electron_count (formal d-electron count from ground-state config)
+# as an additional electronic structure descriptor alongside d_band_center.
+# The distinguishing variable vs Experiment E is the d_electron_count feature.
+# Using same all-functional 375-row cleaned parquet as Experiment E.
+name: cathub_physics_stratified
+use_columns:
+  - d_band_center
+  - d_electron_count
+  - proxy_cn
+  - dft_functional
+categorical_columns:
+  - dft_functional

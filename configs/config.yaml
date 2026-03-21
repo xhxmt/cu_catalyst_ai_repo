@@ -1,5 +1,5 @@
 defaults:
-  - data: demo
+  - data: cathub
   - features: baseline
   - model: rf
   - cv: kfold5
@@ -39,17 +39,6 @@ data:
   # data group files (configs/data/*.yaml) so that switching groups (data=real_table)
   # actually takes effect.  Only truly global, non-source-specific defaults stay here.
   mp_collection: materials/summary
-
-features:
-  use_columns:
-    - coordination_number
-    - avg_neighbor_distance
-    - electronegativity
-    - d_band_center
-    - surface_energy
-    - facet
-  categorical_columns:
-    - facet
 
 model:
   name: rf
