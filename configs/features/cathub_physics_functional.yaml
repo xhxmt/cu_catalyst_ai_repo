@@ -1,0 +1,12 @@
+# Experiment E: physics features + DFT functional one-hot on all 375 rows.
+# Tests whether encoding DFT functional noise unlocks the data-volume advantage
+# over the cleaner but smaller BEEF-vdW-only subset.
+# dft_functional has 27 unique values in the all-functional cleaned parquet;
+# RF importance output will reveal whether the sparse one-hot columns provide signal.
+name: cathub_physics_functional
+use_columns:
+  - d_band_center
+  - proxy_cn
+  - dft_functional
+categorical_columns:
+  - dft_functional

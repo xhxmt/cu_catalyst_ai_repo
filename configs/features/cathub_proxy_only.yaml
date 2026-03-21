@@ -1,0 +1,7 @@
+# Experiment C: proxy_cn ONLY, no one-hot facet.
+# Ablation to measure whether one-hot helps or hurts after proxy_cn is present.
+name: cathub_proxy_only
+use_columns:
+  - electronegativity
+  - proxy_cn
+categorical_columns: []

@@ -1,0 +1,9 @@
+# Experiment B: proxy_cn as an ADDITIONAL continuous feature alongside one-hot facet.
+# Compares directly against cathub_minimal baseline (Experiment A).
+name: cathub_proxy
+use_columns:
+  - electronegativity
+  - proxy_cn         # continuous generalised coordination number (Calle-Vallejo 2015)
+  - facet            # one-hot encoded (categorical_columns below)
+categorical_columns:
+  - facet

@@ -79,6 +79,7 @@ query CathubReactions(
         pubId
         dftCode
         dftFunctional
+        surfaceComposition
         publication {
           doi
           year
@@ -555,6 +556,7 @@ _CANONICAL_COLUMNS = [
     "provenance",
     "unit_adsorption_energy",
     "target_definition",
+    "dft_functional",  # DFT functional used (e.g. PBE, BEEF-vdW); one-hot encoded as a feature
 ]
 
 
@@ -588,7 +590,11 @@ def parse_cathub_response(
         coord_num, avg_dist = _compute_structural_features(rxn.get("systems"))
 
         adsorbate = _derive_adsorbate(rxn.get("reactants"), rxn.get("products"))
-        element = _infer_element(rxn.get("surfaceComposition"))
+        # surfaceComposition is now included in the GraphQL query, so it is
+        # available directly on the node.  Fall back to inference from the
+        # string when the field is present but non-trivial (alloy formulas).
+        surface_comp = rxn.get("surfaceComposition")
+        element = _infer_element(surface_comp)
 
         pub = rxn.get("publication") or {}
         row: dict[str, Any] = {
@@ -609,6 +615,9 @@ def parse_cathub_response(
             ),
             "unit_adsorption_energy": "eV",
             "target_definition": target_definition,
+            # Preserve DFT functional for feature encoding (helps model learn systematic
+            # energy offsets between PBE, BEEF-vdW, etc.).
+            "dft_functional": str(rxn.get("dftFunctional") or "unknown"),
         }
         rows.append(row)
 

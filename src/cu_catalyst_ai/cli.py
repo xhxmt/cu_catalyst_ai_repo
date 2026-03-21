@@ -26,7 +26,7 @@ from cu_catalyst_ai.clean.target_validator import validate_target_definition
 from cu_catalyst_ai.clean.validate_conditions import validate_required_columns, validate_rows
 from cu_catalyst_ai.dataio.mp_fetch import fetch_data
 from cu_catalyst_ai.explain.shap_runner import explain_model
-from cu_catalyst_ai.features.basic_features import build_feature_table
+from cu_catalyst_ai.features.basic_features import add_gcn, add_proxy_cn, build_feature_table
 from cu_catalyst_ai.features.structural_features import add_structural_ratios
 from cu_catalyst_ai.models.train import train_model
 from cu_catalyst_ai.schemas.catalyst import validate_schema_rows
@@ -114,6 +114,7 @@ def _run_fetch(cfg: DictConfig) -> None:
                 "query_filter": query_filter,
                 "target_elements": target_elements,
                 "dft_functional_filter": dft_functional_filter,
+                "page_delay": float(_cfg_get(cfg, "data.page_delay") or 2.0),
             },
         )
     else:
@@ -215,9 +216,28 @@ def _run_featurize(cfg: DictConfig) -> None:
     # Inject element-level descriptors (d_band_center, work_function, etc.)
     # from the offline lookup table before building the ML feature table.
     enriched_df = enrich_with_element_features(enriched_df)
+    # Inject GCN-based proxy coordination number (noop when 'facet' column absent).
+    # Source: Calle-Vallejo et al., Nat. Chem. 2015, DOI 10.1038/nchem.2226
+    enriched_df = add_proxy_cn(enriched_df)
+    # Also write to the independent 'gcn' column for G-group experiment configs.
+    enriched_df = add_gcn(enriched_df)
+
+    # Only include coordination_to_distance when it actually has values.
+    # CatHub API records lack structure data, so this column is all-NaN for
+    # cathub sources — feeding all-NaN columns to RF biases feature importances.
+    extra_cols = []
+    if "coordination_to_distance" in enriched_df.columns:
+        if enriched_df["coordination_to_distance"].notna().any():
+            extra_cols = ["coordination_to_distance"]
+        else:
+            logger.info(
+                "Skipping 'coordination_to_distance': all-NaN for this source — "
+                "exclude from feature table to avoid distorting RF importance scores."
+            )
+
     feature_df = build_feature_table(
         enriched_df,
-        use_columns=list(cfg.features.use_columns) + ["coordination_to_distance"],
+        use_columns=list(cfg.features.use_columns) + extra_cols,
         categorical_columns=list(cfg.features.categorical_columns),
     )
     write_table(feature_df, cfg.data.processed_output)

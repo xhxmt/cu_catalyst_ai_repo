@@ -287,6 +287,9 @@ def test_parse_cathub_response_basic_mapping() -> None:
     # electronegativity is NaN at fetch time; filled later by enrich_with_element_features
     assert pd.isna(df.loc[0, "electronegativity"])
     assert df.loc[0, "target_definition"] == "co_adsorption_energy_ev_v1"
+    # dft_functional should now be preserved from dftFunctional field
+    assert "dft_functional" in df.columns
+    assert df.loc[0, "dft_functional"] == "PBE"
 
 
 def test_parse_cathub_response_d_band_center_not_faked() -> None:

@@ -1,0 +1,19 @@
+# Experiment G: F-group + electronegativity.
+#
+# F-group (cathub_physics_stratified) already uses proxy_cn, which is a GCN
+# float value (Calle-Vallejo 2015) — proxy_cn IS the GCN descriptor.
+# Since adding a duplicate gcn column would give no new information, G-group
+# instead tests whether electronegativity (Pauling scale) adds predictive
+# signal beyond d_band_center + d_electron_count.
+#
+# Unique variable vs F-group: + electronegativity
+# Compare G_rf_metrics vs rf_F_metrics for a clean ablation signal.
+name: cathub_gcn
+use_columns:
+  - d_band_center
+  - d_electron_count
+  - proxy_cn          # GCN float (Calle-Vallejo 2015) — same as F-group
+  - electronegativity # NEW vs F-group: Pauling scale (Allred 1961)
+  - dft_functional
+categorical_columns:
+  - dft_functional

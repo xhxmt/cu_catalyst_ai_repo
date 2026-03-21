@@ -22,18 +22,20 @@ target_elements:
 # DFT functional filter.  Only reactions computed with this functional are
 # kept.  Set to null to disable filtering (keeps all functionals).
 # BEEF-vdW is the most common functional in CatHub for adsorption energies.
-dft_functional_filter: BEEF-vdW
+# NOTE: Set to null here to maximise sample count; DFT consistency is tracked
+# via the provenance column and can be filtered post-hoc at the feature stage.
+dft_functional_filter: null
 
 # Query filter parameters forwarded to the GraphQL endpoint.
 # surface_composition is set per-element by the fetch loop; override only
 # reactants and first (page size) here.
 query_filter:
   reactants: CO
-  first: 10
+  first: 50
 # Delay (seconds) between consecutive pagination requests.
 # Prevents 503 / rate-limit errors when fetching many pages.
 # Each page fetches 'first' reactions; set to 0 to disable throttling.
-page_delay: 2.0
+page_delay: 3.0
 
 # --- Outputs (written by fetch, consumed by clean) ---
 raw_output: data/raw/cathub/cu_cathub_raw.parquet

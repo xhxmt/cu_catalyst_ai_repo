@@ -1,0 +1,9 @@
+# Experiment D: dual physics features on clean BEEF-vdW data.
+# Tests whether d_band_center + proxy_cn outperform electronegativity + proxy_cn
+# on the same ~260-row BEEF-vdW clean subset used in experiments A–C.
+# No one-hot encoding: both features are continuous physical quantities.
+name: cathub_physics_clean
+use_columns:
+  - d_band_center
+  - proxy_cn
+categorical_columns: []
