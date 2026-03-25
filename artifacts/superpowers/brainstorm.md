@@ -1,93 +1,102 @@
-# Brainstorm: 多金属 CatHub 拉取 + 元素特征查表
-
 ## Goal
 
-扩展 CatHub 数据获取范围至所有过渡金属（非仅 Cu），并在特征化阶段引入元素级别的物理化学特征查表（d 带中心、功函数、电负性、原子半径、d 电子数），以便训练出 R² 显著优于当前接近零的随机森林模型。
+在现有 ML 工作流中新增**表面（面指数）级 d 带中心**特征 `surface_d_band_center`，作为 H-Group 实验，与 G-Group（纯体相 `d_band_center`）做单变量纯净对比，验证晶面精度是否提升 CO 吸附能预测性能。
 
 ---
 
 ## Constraints
 
-- 不得修改现有 schema 列名（`adsorption_energy`, `facet`, `element` 等）
-- 不得覆盖原始 raw 数据（append-only 规则）
-- 新引入的元素特征表必须带来源文献标注（Ruban 1997 / Nørskov 教材）
-- 特征查表必须是纯 Python，无需网络请求
-- 不能静默修改 `target_definition` 或数据划分逻辑
-- 所有实验必须能被 `uv run pytest` 通过
-- DFT 模块不应阻塞 ML 主流程
+- **绝对不动历史实验**：A–G 组使用的任何文件（`element_features.py` 的 `_ELEMENT_DATA`、`basic_features.py` 的 `add_gcn`/`add_proxy_cn`）均只能新增，不能修改。
+- **`d_band_center` 列保持不变**：新列名为 `surface_d_band_center`，两列并存于 processed Parquet 文件中，由配置文件决定哪列进入模型。
+- **数据覆盖率现实**：数据集中 94.5% 是 Cu，Cu 有 100/111/211/310/511 五个晶面数据；其他 10 种金属几乎只有 111 或 211，且每种最多 6–11 条。
 
 ---
 
-## Known context
+## Known Context
 
-- 当前 CatHub 拉取配置固定 `surface_composition=Cu`、`reactants=CO`
-- `cathub_fetch.py` 已支持 `surface_composition` 参数化，只需修改 `cathub.yaml`
-- `CatalystRecord.element` 目前硬编码为 `Literal["Cu"]`，需要放宽
-- `cathub_fetch.py` 中 `element` 字段硬编码 `"Cu"`，需要从 API 响应推断
-- 特征文件 `configs/features/cathub_minimal.yaml` 当前只用 `facet` + 3 个结构列（均为 NaN）
-- `src/cu_catalyst_ai/features/` 目前只有 `basic_features.py`、`structural_features.py`、`feature_selection.py`
-- d 带中心参考值：Ruban A.V. et al., *J. Mol. Catal. A*, **115**, 421–429 (1997) Table 1，覆盖 27 种过渡金属
+### 代码现状（读代码确认）
+
+- **`d_band_center` 的实际位置**：`src/cu_catalyst_ai/features/element_features.py` 的 `_ELEMENT_DATA` 字典（Ruban et al. 1997，体相最密排面值），通过 `enrich_with_element_features()` 注入 DataFrame。  
+  ⚠️ **用户方案说"在 `basic_features.py` 中新增 `_SURFACE_DBAND_MAP`"——这个位置是正确的**，与 `_GCN_MAP` 并列是最自然的风格；`element_features.py` 只负责一维体相值，不应扩展为二维。
+- **`basic_features.py`**：现有 `_GCN_MAP`（facet→float），`add_proxy_cn()`，`add_gcn()`，`build_feature_table()`。拟新增的 `_SURFACE_DBAND_MAP`（`(element, facet)→float`）风格完全吻合。
+- **`cli.py` featurize 顺序**：`enrich_with_element_features()` → `add_proxy_cn()` → `add_gcn()`，新函数在 `add_gcn()` 之后插入，天然可以访问已注入的 `d_band_center` 列作为 fallback 来源。
+- **G 组配置**：`configs/features/cathub_gcn.yaml` 使用 `d_band_center + gcn + electronegativity`，H 组唯一区别是替换第一项。
+- **现有测试**：`tests/test_features.py` 已覆盖 `add_gcn`/`add_proxy_cn`，测试风格可直接复用。
+
+### 数据分布（影响外推可靠性）
+
+| 金属 | 晶面 | 样本量 |
+|------|------|--------|
+| Cu | 100 / 111 / 211 / 310 / 511 | ~1110 |
+| Ag, Pd, Rh | 111 / 211 | 6–11 |
+| Au, Ir, Pt | 111 / 211 | 6–9 |
+| Co, Fe, Ni | 111 | 2–3 |
+| Ru | 001 | 1 |
+
+**结论**：晶面级精度的实际受益者几乎只有 Cu。非 Cu 金属的 fallback 到体相值影响的样本极少，不会伤害模型。
 
 ---
 
 ## Risks
 
-| 风险 | 严重程度 | 缓解 |
-|---|---|---|
-| `element` 列 schema 放宽后，非 Cu 元素混入 Cu 专项分析 | 中 | `target_definition` 不改变，保持版本隔离 |
-| CatHub 不同 pubId 对同一体系用不同计算设置 | 高 | 用 `dftCode`/`dftFunctional` 字段做 provenance 过滤 |
-| 查表值是文献单点值，与 DFT 实际值存在偏差 | 中 | 在 provenance 中注明数据来源版本，不参与 target 计算 |
-| 多金属数据量大（可能 5k~20k 行），内存/时间增加 | 低 | 分批分元素拉取，每批写入独立 parquet |
-| `Literal["Cu"]` schema 校验失败（其他元素被硬拒） | 高 | 修改 `CatalystRecord.element` 为 `str` |
-| 元素查表有缺失（稀有金属）| 低 | 缺失值保持 NaN，不伪造；在日志中警告 |
+| 风险 | 等级 | 应对 |
+|------|------|------|
+| Cu(310)/Cu(511) 无文献精确值 | 中 | 用 CN-based 偏移量外推，注释注明来源；fallback 到 `d_band_center` 也可接受 |
+| 外推偏移量在非 Cu/Pt 金属上不准确 | 低 | 这些金属样本量 <6，对模型权重影响可忽略 |
+| `surface_d_band_center` 与 `d_band_center` 共线性 | 低 | H 组配置 **只用** `surface_d_band_center` 不同时保留两者，无共线问题 |
+| H 组 R² 提升不显著（预期 0–0.05） | 中 | 即便不提升，结论本身（晶面信息已被 gcn 充分编码）也是有价值的实验结论，可写入报告 |
 
 ---
 
 ## Options
 
-### Option A：仅换元素、保留 CatHub 架构（最小改动）
-- **摘要**：修改 `cathub.yaml` 的 `surface_composition` 为空（拉全部），在 `cathub_fetch.py` 中从 API 推断 `element`，放宽 schema，新增 `element_features.py` 查表模块
-- **优点**：改动集中，测试边界清晰；查表数据完全离线
-- **缺点**：不过滤 DFT 方法差异；element 推断可能有误（合金表面）
-- **复杂度/风险**：中/中
+### Option A（推荐）：Conservative fallback — Cu 精确值 + 其他金属 fallback 体相值
 
-### Option B：分元素分批拉取 + 严格 provenance 过滤（推荐）
-- **摘要**：为每个目标元素（Fe, Co, Ni, Cu, Ru, Rh, Pd, Ag, Ir, Pt, Au 等）单独查询 CatHub，只保留 `dftFunctional=BEEF-vdW` 的记录（最常用、可比），再 concat + 去重；查表模块独立
-- **优点**：DFT 设置一致性好；数据来源清晰；可单元素重拉
-- **缺点**：需要多次 API 请求；BEEF-vdW 过滤会减少数据量
-- **复杂度/风险**：中/低
+`_SURFACE_DBAND_MAP` 只包含 Cu（和可选的 Pt）的多晶面精确/外推值，所有其他 `(metal, facet)` 组合 fallback 到该金属的 `d_band_center` 体相值（读自已注入的列）。
 
-### Option C：引入 OpenCatalyst / OC20 数据集（大数据路线）
-- **摘要**：下载 OC20/OC22 开放数据集，包含百万量级 DFT 计算，含结构特征
-- **优点**：数据量充足；已有 d 带中心等特征
-- **缺点**：数据集数 GB，本地环境可能有限；需要大量预处理
-- **复杂度/风险**：高/中
+**优势**：Cu 精度提升，非 Cu 等价于不变，零噪声引入；实现简单；rollback 干净。
+
+### Option B：全金属外推偏移量
+
+对所有 11 种金属的 111/100/211/其他晶面都用 Cu 偏移规律外推，使每个 `(metal, facet)` 都有唯一值。
+
+**分析**：理论上信息更丰富，但非 Cu 样本量极少（<6/金属），外推误差对模型的实际影响难以评估，且答辩时文献"追溯链"更长。收益极小，风险边际更高。
+
+### Option C：仅 Cu 精确值，其他 NaN
+
+非 Cu 行的 `surface_d_band_center` 填 NaN，`build_feature_table` 的 all-NaN 逻辑按列处理（不按行），所以不会自动丢弃。GPR 和部分 sklearn 模型不接受 NaN 输入，需要额外 imputer，实现复杂度显著上升。
 
 ---
 
 ## Recommendation
 
-**选 Option B**：分元素拉取 + BEEF-vdW provenance 过滤 + 离线元素特征查表。
+**采用 Option A**，理由：
 
-理由：
-1. 数据质量优先——统一 DFT 泛函是 ML 可比性的基础
-2. 元素查表（Ruban 1997）覆盖全部主流过渡金属，完全离线，无依赖
-3. 改动边界清晰：`cathub.yaml`、`cathub_fetch.py`（element 推断）、新增 `element_features.py`、`configs/features/transition_metals.yaml`、schema 放宽
-4. 风险最低：不改 target_definition，不改数据划分，不改现有 Cu 流水线
+1. Cu 占 94.5%，精确晶面值覆盖了数据集的几乎全部"有效信号区"
+2. 其他金属 fallback 等价于"什么都没改，只是维持 G 组精度"，不引入噪声
+3. 实现量最小（1 个字典 + 1 个函数），与 `_GCN_MAP` 风格完全一致
+4. 答辩追问"这些数值哪来的"：Cu 的文献链最清晰（Mavrikakis/Hammer 体系），注释写清楚即可
+5. 结果无论好坏都是干净的对照实验
 
-预期效果：d 带中心加入后，文献中类似任务 R² 通常可达 0.6~0.9。
+**Cu 的查表值推荐**（供实现参考）：
+
+| 晶面 | 推荐值 (eV) | 来源分类 |
+|------|-------------|----------|
+| Cu(111) | −2.67 | 精确文献值（Ruban 1997 / Hammer-Nørskov） |
+| Cu(100) | −2.80 | 外推（111 + CN 偏移 ~−0.13 eV） |
+| Cu(211) | −2.27 | 外推（step-edge, +0.40 eV vs 111） |
+| Cu(310) | −2.27 | 外推（同 211，高指数 step site） |
+| Cu(511) | −2.40 | 外推（宽台阶 step, +0.27 eV vs 111） |
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] `task=fetch data=cathub` 能拉取多种过渡金属（至少 5 种）的 CO 吸附数据
-- [ ] `element` 列正确填充金属元素名称（非硬编码 Cu）
-- [ ] `element_features.py` 查表函数：输入元素符号 → 返回 d 带中心、功函数、电负性、原子半径、d 电子数
-- [ ] 所有查表值标注文献出处（Ruban 1997 / CRC Handbook）
-- [ ] 缺失查表值保持 NaN，不伪造，在日志中警告
-- [ ] `configs/features/transition_metals.yaml` 新增特征配置，包含元素特征列
-- [ ] `task=baseline data=cathub features=transition_metals` 端到端跑通
-- [ ] 新模型 R² > 0.5（对测试集）
-- [ ] `uv run pytest` 全部通过
-- [ ] `uv run ruff check .` 无报错
+1. `basic_features.py` 新增 `_SURFACE_DBAND_MAP: dict[tuple[str,str], float]` 和 `add_surface_dband(df)` 函数，不修改任何现有函数
+2. `_SURFACE_DBAND_MAP` 上方注释明确区分"精确文献值"与"CN-based 外推值"
+3. Fallback 逻辑：`(metal, facet)` 不在表中 → 读取该行 `d_band_center` 列；连 `d_band_center` 也为 NaN → 返回 NaN
+4. `cli.py` featurize 阶段调用 `add_surface_dband()`，processed Parquet 文件包含 `surface_d_band_center` 列
+5. `configs/features/cathub_surface_dband.yaml` 新建，与 G 组唯一区别是 `d_band_center → surface_d_band_center`
+6. `tests/test_features.py` 新增至少 5 个测试：Cu+111 精确值、Cu+211 外推值近似、unknown 金属→NaN、unknown 晶面→fallback 体相值、无 facet 列→noop
+7. `uv run pytest` 全绿，`uv run ruff check src/ tests/` 无新 error
+8. 用 `model=rf`、`model=rf_tuned`、`model=gpr` 分别跑 H 组实验，指标保存在 `reports/tables/`，与 G 组 R² 对比写入 CHANGELOG

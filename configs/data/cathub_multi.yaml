@@ -1,0 +1,39 @@
+source_name: cathub
+n_samples: null
+
+# --- API settings (same as cathub.yaml) ---
+api_url: https://api.catalysis-hub.org/graphql
+
+target_elements:
+  - Fe
+  - Co
+  - Ni
+  - Cu
+  - Ru
+  - Rh
+  - Pd
+  - Ag
+  - Ir
+  - Pt
+  - Au
+
+dft_functional_filter: null
+
+query_filter:
+  reactants: CO
+  first: 50
+
+page_delay: 3.0
+
+# Optional: path to Mamun O+OH CSV to append after fetching CO data.
+# When set, the loader appends O/OH rows to the raw CO parquet.
+mamun_path: data/full_dataset.csv
+
+# Output paths (separate from cathub.yaml to preserve original CO-only artifacts)
+raw_output: data/raw/cathub/cu_cathub_multi_raw.parquet
+cleaned_output: data/interim/cu_cathub_multi_cleaned.parquet
+processed_output: data/processed/cathub_multi_model_table.parquet
+review_output: data/interim/cu_cathub_multi_review.parquet
+
+# Target definition — accepts CO, O, OH (required_adsorbate: null)
+target_definition: adsorption_energy_ev_multi_v1

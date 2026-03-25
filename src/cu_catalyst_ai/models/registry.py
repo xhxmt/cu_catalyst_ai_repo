@@ -3,6 +3,7 @@ from __future__ import annotations
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, WhiteKernel
+from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LinearRegression
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
@@ -48,7 +49,9 @@ def build_model(model_name: str, random_state: int = 42, params: dict | None = N
             random_state=random_state,
             **params,
         )
-        # Wrap in a Pipeline so that StandardScaler is applied automatically.
-        # GPR is sensitive to feature magnitude; RF/XGBoost are not.
-        return Pipeline([("scaler", StandardScaler()), ("gpr", gpr)])
+        # Wrap in a Pipeline: impute NaN (median) → standardize → GPR.
+        # GPR is sensitive to feature magnitude and cannot handle NaN natively.
+        # SimpleImputer is a no-op when there are no missing values (G-group).
+        imputer = SimpleImputer(strategy="median")
+        return Pipeline([("imputer", imputer), ("scaler", StandardScaler()), ("gpr", gpr)])
     raise ValueError(f"Unknown model: {model_name}")

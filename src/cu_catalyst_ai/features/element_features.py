@@ -160,6 +160,27 @@ _ELEMENT_DATA: dict[str, dict[str, float | None]] = {
         "atomic_radius_pm": 145,
         "d_electron_count": 10,
     },
+    "Y": {
+        "d_band_center": -2.45,  # Ruban 1997 bulk  [L]
+        "work_function": 3.10,
+        "electronegativity": 1.22,
+        "atomic_radius_pm": 190,
+        "d_electron_count": 1,
+    },
+    "Zr": {
+        "d_band_center": -3.26,  # Ruban 1997 bulk  [L]
+        "work_function": 4.05,
+        "electronegativity": 1.33,
+        "atomic_radius_pm": 175,
+        "d_electron_count": 2,
+    },
+    "Hf": {
+        "d_band_center": -3.05,  # Ruban 1997 bulk  [L]
+        "work_function": 3.90,
+        "electronegativity": 1.30,
+        "atomic_radius_pm": 167,
+        "d_electron_count": 2,
+    },
     "Ta": {
         "d_band_center": -3.25,
         "work_function": 4.25,

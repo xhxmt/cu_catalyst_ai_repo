@@ -6,8 +6,8 @@ Model: rf
 
 |   mae_mean |   mae_std |   rmse_mean |   rmse_std |   r2_mean |    r2_std |   test_mae |   test_rmse |   test_r2 | model_name   |
 |-----------:|----------:|------------:|-----------:|----------:|----------:|-----------:|------------:|----------:|:-------------|
-|   0.121673 | 0.0110066 |    0.144965 |  0.0115092 |  0.527808 | 0.0806465 |   0.116152 |    0.148874 |  0.509363 | rf           |
+|    1.77983 |  0.397003 |     2.60151 |   0.527367 |  0.277095 | 0.0796366 |    2.42283 |     3.30005 |  0.356704 | rf           |
 
 ## Top features
 
-coordination_number, avg_neighbor_distance, facet_111, surface_energy, facet_211
+electronegativity, d_band_center, is_O, is_OH, is_CO
