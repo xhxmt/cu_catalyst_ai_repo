@@ -26,7 +26,13 @@ from cu_catalyst_ai.clean.target_validator import validate_target_definition
 from cu_catalyst_ai.clean.validate_conditions import validate_required_columns, validate_rows
 from cu_catalyst_ai.dataio.mp_fetch import fetch_data
 from cu_catalyst_ai.explain.shap_runner import explain_model
-from cu_catalyst_ai.features.basic_features import add_gcn, add_proxy_cn, build_feature_table
+from cu_catalyst_ai.features.basic_features import (
+    add_adsorbate_ohe,
+    add_gcn,
+    add_proxy_cn,
+    add_surface_dband,
+    build_feature_table,
+)
 from cu_catalyst_ai.features.structural_features import add_structural_ratios
 from cu_catalyst_ai.models.train import train_model
 from cu_catalyst_ai.schemas.catalyst import validate_schema_rows
@@ -125,12 +131,48 @@ def _run_fetch(cfg: DictConfig) -> None:
             seed=int(cfg.project.seed),
         )
 
+    # --- Optional: append Mamun O/OH rows to the raw parquet (I-2 mode) ----
+    mamun_path = _cfg_get(cfg, "data.mamun_path")
+    if source != "mamun" and mamun_path:
+        import pandas as pd  # noqa: PLC0415
+
+        from cu_catalyst_ai.dataio.mamun_loader import load_mamun_ooh  # noqa: PLC0415
+        from cu_catalyst_ai.utils.io import read_table  # noqa: PLC0415
+
+        raw_output_path = str(
+            _cfg_get(cfg, "data.raw_output") or "data/raw/cathub/cu_cathub_raw.parquet"
+        )
+        base_df = read_table(raw_output_path)
+        mamun_df = load_mamun_ooh(str(mamun_path))
+        merged = pd.concat([base_df, mamun_df], ignore_index=True)
+        from cu_catalyst_ai.utils.io import write_table  # noqa: PLC0415
+
+        write_table(merged, raw_output_path)
+        logger.info(
+            "Appended %d Mamun O/OH rows; total raw: %d rows -> %s",
+            len(mamun_df),
+            len(merged),
+            raw_output_path,
+        )
+
+
+def _run_fetch_mamun(cfg: DictConfig) -> None:
+    """Fetch stage for source_name=mamun: load O+OH from full_dataset.csv."""
+    from cu_catalyst_ai.dataio.mamun_loader import load_mamun_ooh  # noqa: PLC0415
+    from cu_catalyst_ai.utils.io import write_table  # noqa: PLC0415
+
+    mamun_path = str(_cfg_get(cfg, "data.mamun_path") or "data/full_dataset.csv")
+    raw_output = str(_cfg_get(cfg, "data.raw_output") or "data/raw/mamun/mamun_ooh_raw.parquet")
+    df = load_mamun_ooh(mamun_path)
+    write_table(df, raw_output)
+    logger.info("Mamun fetch complete: %d rows -> %s", len(df), raw_output)
+
 
 def _run_clean(cfg: DictConfig) -> None:
     source = str(cfg.data.source_name)
 
     # Determine input/output paths for this stage.
-    if source in ("table", "cathub"):
+    if source in ("table", "cathub", "mamun"):
         raw_path = str(_cfg_get(cfg, "data.raw_output") or cfg.data.get("demo_output"))
         cleaned_path = str(cfg.data.cleaned_output)
         review_path = str(
@@ -153,9 +195,12 @@ def _run_clean(cfg: DictConfig) -> None:
     raw_df = normalize_units(raw_df, unit_conversions=unit_conversions)
 
     # --- Layer 3: Row-level governance (flags, does not raise) --------------
-    if source in ("table", "cathub"):
+    if source in ("table", "cathub", "mamun"):
         target_def_name = str(_cfg_get(cfg, "data.target_definition") or "")
-        required_ads = str(_cfg_get(cfg, "target.required_adsorbate") or "CO")
+        # Fix: read required_adsorbate as None when not set (multi-adsorbate
+        # target definitions set required_adsorbate: null in their YAML).
+        _raw_ads = _cfg_get(cfg, "target.required_adsorbate")
+        required_ads: str | None = None if _raw_ads is None else str(_raw_ads)
         raw_df = validate_target_definition(
             raw_df, target_def_name, required_adsorbate=required_ads
         )
@@ -174,10 +219,9 @@ def _run_clean(cfg: DictConfig) -> None:
             electronegativity_max=float(
                 _cfg_get(cfg, "target.review_bounds.electronegativity_max") or 4.0
             ),
-            # Catalysis-Hub API does not return structure data; NaN in
-            # avg_neighbor_distance / coordination_number is expected and
-            # should not isolate rows.
-            skip_structural_nan=(source == "cathub"),
+            # Catalysis-Hub API and Mamun dataset do not return structure data;
+            # NaN in avg_neighbor_distance / coordination_number is expected.
+            skip_structural_nan=(source in ("cathub", "mamun")),
         )
         # --- Layer 4: Pydantic schema validation (flags, does not raise) ----
         raw_df = validate_schema_rows(raw_df)
@@ -221,6 +265,12 @@ def _run_featurize(cfg: DictConfig) -> None:
     enriched_df = add_proxy_cn(enriched_df)
     # Also write to the independent 'gcn' column for G-group experiment configs.
     enriched_df = add_gcn(enriched_df)
+    # H-group: surface (facet-resolved) d-band centre.  Requires both 'element'
+    # and 'facet' columns; noop otherwise.  Does NOT modify 'd_band_center'.
+    enriched_df = add_surface_dband(enriched_df)
+    # I-group: add one-hot adsorbate columns (is_CO, is_O, is_OH).
+    # Noop when 'adsorbate' column is absent — safe for A-H CO-only experiments.
+    enriched_df = add_adsorbate_ohe(enriched_df)
 
     # Only include coordination_to_distance when it actually has values.
     # CatHub API records lack structure data, so this column is all-NaN for
@@ -311,12 +361,16 @@ def main(cfg: DictConfig) -> None:
     """
     set_global_seed(int(cfg.project.seed))
     task = str(cfg.task)
+    source = str(cfg.data.source_name)
     logger.info("Running task=%s with model=%s", task, cfg.model.name)
     logger.debug(OmegaConf.to_yaml(cfg))
 
     if task == "baseline":
         logger.info("=== Stage 1/6: fetch ===")
-        _run_fetch(cfg)
+        if source == "mamun":
+            _run_fetch_mamun(cfg)
+        else:
+            _run_fetch(cfg)
         logger.info("=== Stage 2/6: clean ===")
         _run_clean(cfg)
         logger.info("=== Stage 3/6: featurize ===")
@@ -331,7 +385,10 @@ def main(cfg: DictConfig) -> None:
         return
 
     if task == "fetch":
-        _run_fetch(cfg)
+        if source == "mamun":
+            _run_fetch_mamun(cfg)
+        else:
+            _run_fetch(cfg)
         return
 
     if task == "clean":

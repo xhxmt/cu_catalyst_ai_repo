@@ -1,0 +1,15 @@
+name: cathub_multi_ads
+
+# Feature columns for I-group multi-adsorbate experiments.
+# Uses bulk d_band_center (from _ELEMENT_DATA, Ruban 1997) consistent with
+# G-group experiment, NOT surface_d_band_center (h-group was inconclusive).
+# is_CO / is_O / is_OH are added by add_adsorbate_ohe() in the featurize stage.
+use_columns:
+  - electronegativity
+  - d_band_center
+  - gcn
+  - is_CO
+  - is_O
+  - is_OH
+
+categorical_columns: []

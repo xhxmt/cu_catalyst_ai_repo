@@ -1,0 +1,28 @@
+name: adsorption_energy_ev_multi_v1
+column: adsorption_energy
+canonical_unit: eV
+unit_column: unit_adsorption_energy
+
+# null means accept any adsorbate (CO, O, OH, ...)
+# The target_validator.py skips adsorbate filtering when this is null.
+required_adsorbate: null
+
+# Units that can be converted to eV automatically.
+supported_unit_conversions:
+  eV: 1.0
+  meV: 0.001
+  kJ/mol: 0.010364
+
+# Hard-invalid rules: rows matching these are isolated immediately.
+hard_invalid_rules:
+  avg_neighbor_distance_le_zero: true
+  coordination_number_lt_zero: true
+  adsorption_energy_non_numeric: true
+
+# Soft review bounds: flagged for manual review, NOT auto-rejected.
+# O adsorption can reach ~-8 eV so the abs-max is widened to 12 eV.
+review_bounds:
+  adsorption_energy_abs_max: 12.0
+  surface_energy_min: 0.0
+  electronegativity_min: 0.0
+  electronegativity_max: 4.0

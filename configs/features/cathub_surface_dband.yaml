@@ -1,0 +1,22 @@
+# Experiment H: G-group with surface-resolved d-band centre.
+#
+# Unique variable vs G-group: surface_d_band_center replaces d_band_center.
+# All other features (d_electron_count, proxy_cn, electronegativity, dft_functional)
+# are identical to G-group (cathub_gcn.yaml).
+#
+# Values in _SURFACE_DBAND_MAP:
+#   Cu(111/100/211): literature + ACS Omega 2022 WGS DFT relative shifts.
+#   Cu(310/511): trend extrapolation following step-site CN sequence.
+#   Non-Cu 211: 111 value + 0.07 eV (Cu Δ(211-111) approximation).
+#   Other (metal, facet): fallback to bulk d_band_center.
+#
+# Compare H_*_metrics vs G_*_metrics (cathub_gcn) for a clean ablation.
+name: cathub_surface_dband
+use_columns:
+  - surface_d_band_center  # NEW vs G-group: (element, facet) resolved d-band
+  - d_electron_count
+  - proxy_cn               # GCN float (Calle-Vallejo 2015)
+  - electronegativity      # Pauling scale (Allred 1961)
+  - dft_functional
+categorical_columns:
+  - dft_functional

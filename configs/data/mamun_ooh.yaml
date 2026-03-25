@@ -1,0 +1,11 @@
+source_name: mamun
+mamun_path: data/full_dataset.csv
+
+# Output paths for this source
+raw_output: data/raw/mamun/mamun_ooh_raw.parquet
+cleaned_output: data/interim/mamun_ooh_cleaned.parquet
+processed_output: data/processed/mamun_ooh_model_table.parquet
+review_output: data/interim/mamun_ooh_review.parquet
+
+# Target definition — accepts O and OH (required_adsorbate: null)
+target_definition: adsorption_energy_ev_multi_v1
