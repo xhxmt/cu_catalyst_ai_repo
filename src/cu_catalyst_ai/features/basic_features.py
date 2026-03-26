@@ -331,8 +331,9 @@ def build_feature_table(
     keep = [c for c in available if c not in all_nan]
     # Always retain element as a metadata column (needed for sample_weight in train.py).
     meta_cols = ["catalyst_id", "adsorption_energy", "split"]
-    if "element" in df.columns:
-        meta_cols.append("element")
+    for col in ("element", "adsorbate"):
+        if col in df.columns:
+            meta_cols.append(col)
     out = df[meta_cols + keep].copy()
     # Only one-hot encode categorical columns that are still present.
     cat_keep = [c for c in categorical_columns if c in keep]

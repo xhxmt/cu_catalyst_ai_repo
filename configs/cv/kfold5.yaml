@@ -1,3 +1,7 @@
 n_splits: 5
 shuffle: true
 random_state: 42
+# strategy: group uses GroupKFold (element-based LOEO), plain = KFold.
+# GroupKFold is automatically activated when the dataset contains an 'element'
+# column (see cu_catalyst_ai.models.cv.run_cv).
+strategy: group

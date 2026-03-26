@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-NON_FEATURE_COLUMNS = {"catalyst_id", "adsorption_energy", "split", "element"}
+NON_FEATURE_COLUMNS = {"catalyst_id", "adsorption_energy", "split", "element", "adsorbate"}
 
 
 def get_feature_columns(df: pd.DataFrame) -> list[str]:

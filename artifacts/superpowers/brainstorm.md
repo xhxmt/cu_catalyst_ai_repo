@@ -1,102 +1,77 @@
 ## Goal
 
-在现有 ML 工作流中新增**表面（面指数）级 d 带中心**特征 `surface_d_band_center`，作为 H-Group 实验，与 G-Group（纯体相 `d_band_center`）做单变量纯净对比，验证晶面精度是否提升 CO 吸附能预测性能。
-
----
+实现 per-adsorbate target centering：训练前将每种吸附质的吸附能减去该吸附质在**训练集**上的均值，使不同吸附质的 y 分布对齐，从而避免 MSE 被 O 绝对值域主导，提升多吸附质混合模型（I-2/I-3）的 R² 和 MAE。
 
 ## Constraints
 
-- **绝对不动历史实验**：A–G 组使用的任何文件（`element_features.py` 的 `_ELEMENT_DATA`、`basic_features.py` 的 `add_gcn`/`add_proxy_cn`）均只能新增，不能修改。
-- **`d_band_center` 列保持不变**：新列名为 `surface_d_band_center`，两列并存于 processed Parquet 文件中，由配置文件决定哪列进入模型。
-- **数据覆盖率现实**：数据集中 94.5% 是 Cu，Cu 有 100/111/211/310/511 五个晶面数据；其他 10 种金属几乎只有 111 或 211，且每种最多 6–11 条。
+- Centering 均值**只能从训练折的训练部分**计算（GroupKFold 每折内各自算），防止数据泄露
+- 预测时必须**还原**（+ train_means[adsorbate]）才能与原始 y 对比评估
+- 现有 `run_cv` 的 `cross_validate` 框架不支持 fold-aware target transform，需要改为手动 fold 循环
+- `train_model` 的最终 hold-out 测试也需做同样的 centering（全量训练集算 mean，然后 apply 到 test_df）
+- CO-only 实验（没有 `adsorbate` 列或只有 1 种吸附质）不受影响，行为不变（noop）
+- 不能修改公共接口的输出列名（`adsorption_energy` 仍是主要列）
+- `adsorbate` 列必须在特征表中保留（需要核查）
 
----
+## Known context
 
-## Known Context
-
-### 代码现状（读代码确认）
-
-- **`d_band_center` 的实际位置**：`src/cu_catalyst_ai/features/element_features.py` 的 `_ELEMENT_DATA` 字典（Ruban et al. 1997，体相最密排面值），通过 `enrich_with_element_features()` 注入 DataFrame。  
-  ⚠️ **用户方案说"在 `basic_features.py` 中新增 `_SURFACE_DBAND_MAP`"——这个位置是正确的**，与 `_GCN_MAP` 并列是最自然的风格；`element_features.py` 只负责一维体相值，不应扩展为二维。
-- **`basic_features.py`**：现有 `_GCN_MAP`（facet→float），`add_proxy_cn()`，`add_gcn()`，`build_feature_table()`。拟新增的 `_SURFACE_DBAND_MAP`（`(element, facet)→float`）风格完全吻合。
-- **`cli.py` featurize 顺序**：`enrich_with_element_features()` → `add_proxy_cn()` → `add_gcn()`，新函数在 `add_gcn()` 之后插入，天然可以访问已注入的 `d_band_center` 列作为 fallback 来源。
-- **G 组配置**：`configs/features/cathub_gcn.yaml` 使用 `d_band_center + gcn + electronegativity`，H 组唯一区别是替换第一项。
-- **现有测试**：`tests/test_features.py` 已覆盖 `add_gcn`/`add_proxy_cn`，测试风格可直接复用。
-
-### 数据分布（影响外推可靠性）
-
-| 金属 | 晶面 | 样本量 |
-|------|------|--------|
-| Cu | 100 / 111 / 211 / 310 / 511 | ~1110 |
-| Ag, Pd, Rh | 111 / 211 | 6–11 |
-| Au, Ir, Pt | 111 / 211 | 6–9 |
-| Co, Fe, Ni | 111 | 2–3 |
-| Ru | 001 | 1 |
-
-**结论**：晶面级精度的实际受益者几乎只有 Cu。非 Cu 金属的 fallback 到体相值影响的样本极少，不会伤害模型。
-
----
+- **数据集**：I-2 = CatHub CO（300 train）+ Mamun O/OH（176 train），`adsorbate` ∈ {CO, O, OH}
+- **当前问题**：I-2 全集 LOEO R² = 0.229（GPR），CO-only H 组 LOEO R² ≈ −0.05；O 的绝对值（−6～−2 eV）相比 CO（−2～+1 eV）高 4× 范围，MSE 被 O 主导
+- **模型**：H_rf / I2_gpr；GPR 的 `clone()+fit()` 在手动 fold 循环中可用
+- **当前 CV 路径**：`cv.py::run_cv → GroupKFold → cross_validate`（sklearn 封装），不支持 fold-aware y 变换
+- **保存的模型**：`train_model` 最终做全量训练集 fit，`ads_mean_map` 需写入 joblib bundle
 
 ## Risks
 
 | 风险 | 等级 | 应对 |
 |------|------|------|
-| Cu(310)/Cu(511) 无文献精确值 | 中 | 用 CN-based 偏移量外推，注释注明来源；fallback 到 `d_band_center` 也可接受 |
-| 外推偏移量在非 Cu/Pt 金属上不准确 | 低 | 这些金属样本量 <6，对模型权重影响可忽略 |
-| `surface_d_band_center` 与 `d_band_center` 共线性 | 低 | H 组配置 **只用** `surface_d_band_center` 不同时保留两者，无共线问题 |
-| H 组 R² 提升不显著（预期 0–0.05） | 中 | 即便不提升，结论本身（晶面信息已被 gcn 充分编码）也是有价值的实验结论，可写入报告 |
-
----
+| test_df 中有训练集未见的 adsorbate → map 返回 NaN | 中 | 对未知 adsorbate 用全局均值 fallback，并警告 |
+| `adsorbate` 列在 feature_df 中被丢弃 → centering 无法做 | 高 | 在 `train_model` 入参的 `df` 里检查；`feature_df` 必须携带 metadata 列 |
+| CO-only 实验误触发 centering（只有 1 种 adsorbate，无意义） | 低 | guard：unique adsorbate < 2 时 skip |
+| hold-out test 用全量训练集 mean vs CV 用各折训练子集 mean，微小不一致 | 低 | 正确做法，文档说明即可 |
+| 改变 y 后 SHAP 值单位随之改变 | 低 | explain 阶段用还原后的 model，说明单位 |
 
 ## Options
 
-### Option A（推荐）：Conservative fallback — Cu 精确值 + 其他金属 fallback 体相值
+### Option A — 仅改 `cv.py`，手动 fold 循环替代 `cross_validate`
+- ✅ 改动范围最小，CO-only 路径照旧
+- ❌ `run_cv` 签名变复杂（需传入原始 df / adsorbate_col），hold-out test 仍需单独处理
 
-`_SURFACE_DBAND_MAP` 只包含 Cu（和可选的 Pt）的多晶面精确/外推值，所有其他 `(metal, facet)` 组合 fallback 到该金属的 `d_band_center` 体相值（读自已注入的列）。
+### Option B — 引入 `AdsorbateCenteringWrapper`（sklearn TransformerMixin）
+- ✅ 原生支持 `cross_validate`
+- ❌ sklearn 标准接口不支持 X 和 y 的 adsorbate 耦合，实现复杂，测试成本高
 
-**优势**：Cu 精度提升，非 Cu 等价于不变，零噪声引入；实现简单；rollback 干净。
+### Option C — 改 `train_model` + `cv.py`，传入 adsorbate Series，手动 fold 循环（**推荐**）
 
-### Option B：全金属外推偏移量
+扩展 `train_model` 签名加 `adsorbate_col: str | None = "adsorbate"`：
 
-对所有 11 种金属的 111/100/211/其他晶面都用 Cu 偏移规律外推，使每个 `(metal, facet)` 都有唯一值。
+1. 检测 `adsorbate_col` 是否存在且 unique ≥ 2
+2. 路由到新的 `run_cv_with_centering`（手动 fold 循环）
+3. 每折内算 `train_means`，centering `y_train / y_test`，训练预测，还原后算 R²/MAE
+4. hold-out test 同理（全量训练集算 mean）
+5. `ads_mean_map` 存进 joblib bundle，供推断时调用
+6. CO-only / 单 adsorbate → fallback 到原有 `run_cv`
 
-**分析**：理论上信息更丰富，但非 Cu 样本量极少（<6/金属），外推误差对模型的实际影响难以评估，且答辩时文献"追溯链"更长。收益极小，风险边际更高。
+- ✅ 改动聚焦，语义清晰，向下兼容
+- ❌ run_cv 和 run_cv_with_centering 两套路径需各自测试
 
-### Option C：仅 Cu 精确值，其他 NaN
-
-非 Cu 行的 `surface_d_band_center` 填 NaN，`build_feature_table` 的 all-NaN 逻辑按列处理（不按行），所以不会自动丢弃。GPR 和部分 sklearn 模型不接受 NaN 输入，需要额外 imputer，实现复杂度显著上升。
-
----
+### Option D — 在 clean/featurize 阶段预先写死 centered target 列
+- ❌ 全局 mean → 信息泄露，不符合正确 LOEO CV 语义
 
 ## Recommendation
 
-**采用 Option A**，理由：
+**选 Option C**。
 
-1. Cu 占 94.5%，精确晶面值覆盖了数据集的几乎全部"有效信号区"
-2. 其他金属 fallback 等价于"什么都没改，只是维持 G 组精度"，不引入噪声
-3. 实现量最小（1 个字典 + 1 个函数），与 `_GCN_MAP` 风格完全一致
-4. 答辩追问"这些数值哪来的"：Cu 的文献链最清晰（Mavrikakis/Hammer 体系），注释写清楚即可
-5. 结果无论好坏都是干净的对照实验
+实现步骤：
+1. `cv.py` 新增 `run_cv_with_centering(model, X, y, adsorbates, groups, n_splits)` — 手动 fold 循环，per-fold centering，还原后返回 summary + fold_preds
+2. `train.py::train_model` 新增 `adsorbate_col` 参数（默认 `"adsorbate"`），自动检测多 adsorbate 时路由到新函数；最终 hold-out 也做 centering；`ads_mean_map` 写入 joblib bundle
+3. 新增测试：`test_run_cv_with_centering_no_leakage` 验证 fold-aware mean；`test_centering_noop_single_adsorbate`
+4. 运行 I-2 GPR，对比 LOEO R²（预期 0.23 → 0.35–0.45）
 
-**Cu 的查表值推荐**（供实现参考）：
+## Acceptance criteria
 
-| 晶面 | 推荐值 (eV) | 来源分类 |
-|------|-------------|----------|
-| Cu(111) | −2.67 | 精确文献值（Ruban 1997 / Hammer-Nørskov） |
-| Cu(100) | −2.80 | 外推（111 + CN 偏移 ~−0.13 eV） |
-| Cu(211) | −2.27 | 外推（step-edge, +0.40 eV vs 111） |
-| Cu(310) | −2.27 | 外推（同 211，高指数 step site） |
-| Cu(511) | −2.40 | 外推（宽台阶 step, +0.27 eV vs 111） |
-
----
-
-## Acceptance Criteria
-
-1. `basic_features.py` 新增 `_SURFACE_DBAND_MAP: dict[tuple[str,str], float]` 和 `add_surface_dband(df)` 函数，不修改任何现有函数
-2. `_SURFACE_DBAND_MAP` 上方注释明确区分"精确文献值"与"CN-based 外推值"
-3. Fallback 逻辑：`(metal, facet)` 不在表中 → 读取该行 `d_band_center` 列；连 `d_band_center` 也为 NaN → 返回 NaN
-4. `cli.py` featurize 阶段调用 `add_surface_dband()`，processed Parquet 文件包含 `surface_d_band_center` 列
-5. `configs/features/cathub_surface_dband.yaml` 新建，与 G 组唯一区别是 `d_band_center → surface_d_band_center`
-6. `tests/test_features.py` 新增至少 5 个测试：Cu+111 精确值、Cu+211 外推值近似、unknown 金属→NaN、unknown 晶面→fallback 体相值、无 facet 列→noop
-7. `uv run pytest` 全绿，`uv run ruff check src/ tests/` 无新 error
-8. 用 `model=rf`、`model=rf_tuned`、`model=gpr` 分别跑 H 组实验，指标保存在 `reports/tables/`，与 G 组 R² 对比写入 CHANGELOG
+- [ ] `run_cv_with_centering` 通过测试，验证 fold isolation（每折只用训练子集算 mean）
+- [ ] 测试验证：单 adsorbate 时行为与 `run_cv` 完全一致
+- [ ] I-2 GPR 全集 LOEO Test R² ≥ 0.35（相对当前 0.229 有提升）
+- [ ] CO 子集 R² 不退步超过 0.05
+- [ ] `ads_mean_map` 保存在 joblib bundle，推断时可还原
+- [ ] ruff check + format 通过；pytest 全部 pass
